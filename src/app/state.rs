@@ -85,6 +85,11 @@ pub enum ConfirmAction {
     DeleteTodo(i64),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ExternalCommand {
+    OpenLazyGit { project_path: String },
+}
+
 pub struct AppState {
     pub(crate) repo: Repository,
     pub(crate) projects: Vec<Project>,
@@ -104,6 +109,7 @@ pub struct AppState {
     pub(crate) git_status_cache: HashMap<String, GitProjectStatus>,
     pub(crate) git_history_cache: HashMap<String, GitHistory>,
     pub(crate) git_release_cache: HashMap<String, GitRelease>,
+    pub(crate) pending_external_command: Option<ExternalCommand>,
     pub(crate) pending_todo_delete: bool,
     last_git_refresh: Instant,
     last_db_refresh: Instant,
@@ -132,6 +138,7 @@ impl AppState {
             git_status_cache: HashMap::new(),
             git_history_cache: HashMap::new(),
             git_release_cache: HashMap::new(),
+            pending_external_command: None,
             pending_todo_delete: false,
             last_git_refresh: Instant::now() - GIT_REFRESH_INTERVAL,
             last_db_refresh: Instant::now() - DB_REFRESH_INTERVAL,
@@ -146,6 +153,15 @@ impl AppState {
 
     pub fn should_quit(&self) -> bool {
         self.quit
+    }
+
+    pub fn take_pending_external_command(&mut self) -> Option<ExternalCommand> {
+        self.pending_external_command.take()
+    }
+
+    pub fn refresh_after_external_git_tool(&mut self) {
+        self.refresh_git_tracking(true);
+        self.status = "Refreshed git state after lazygit".to_string();
     }
 
     pub fn selected_project(&self) -> Option<&Project> {
@@ -294,6 +310,9 @@ impl AppState {
             }
             KeyCode::Char('f') => {
                 self.fetch_now();
+            }
+            KeyCode::Char('g') => {
+                self.queue_lazygit_launch();
             }
             KeyCode::Char('A') => {
                 if let Err(err) = self.toggle_show_archived() {
@@ -599,6 +618,16 @@ impl AppState {
                 self.status = format!("Fetch failed: {err}");
             }
         }
+    }
+
+    fn queue_lazygit_launch(&mut self) {
+        let Some(project_path) = self.selected_project().map(|project| project.path.clone()) else {
+            self.status = "No project selected".to_string();
+            return;
+        };
+
+        self.pending_external_command = Some(ExternalCommand::OpenLazyGit { project_path });
+        self.status = "Opening lazygit...".to_string();
     }
 
     fn toggle_show_archived(&mut self) -> Result<()> {
@@ -1048,7 +1077,10 @@ mod tests {
 
     use crate::db::repo::Repository;
 
-    use super::{AppState, DB_REFRESH_INTERVAL, FocusPane, PaneAreas};
+    use super::{
+        AddProjectField, AddProjectModal, AppState, DB_REFRESH_INTERVAL, ExternalCommand,
+        FocusPane, Modal, PaneAreas,
+    };
 
     fn test_state() -> AppState {
         let repo = Repository::open_in_memory().expect("repo");
@@ -1202,6 +1234,59 @@ mod tests {
         let mut state = test_state();
         state.handle_key_event(KeyEvent::from(KeyCode::Char('f')));
         assert_eq!(state.status, "Fetched latest database and git state");
+    }
+
+    #[test]
+    fn lazygit_shortcut_queues_external_command() {
+        let mut state = test_state();
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('g')));
+
+        assert_eq!(
+            state.take_pending_external_command(),
+            Some(ExternalCommand::OpenLazyGit {
+                project_path: state.selected_project().expect("project").path.clone(),
+            })
+        );
+    }
+
+    #[test]
+    fn lazygit_shortcut_is_ignored_while_filtering() {
+        let mut state = test_state();
+        state.filter_mode = true;
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('g')));
+
+        assert!(state.take_pending_external_command().is_none());
+        assert_eq!(state.filter_input, "g");
+    }
+
+    #[test]
+    fn lazygit_shortcut_is_ignored_while_help_is_open() {
+        let mut state = test_state();
+        state.show_help = true;
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('g')));
+
+        assert!(state.take_pending_external_command().is_none());
+    }
+
+    #[test]
+    fn lazygit_shortcut_is_ignored_while_modal_is_open() {
+        let mut state = test_state();
+        state.modal = Some(Modal::AddProject(AddProjectModal {
+            path: String::new(),
+            name: String::new(),
+            active_field: AddProjectField::Path,
+        }));
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('g')));
+
+        assert!(state.take_pending_external_command().is_none());
+        match state.modal {
+            Some(Modal::AddProject(ref add)) => assert_eq!(add.path, "g"),
+            _ => panic!("expected add-project modal"),
+        }
     }
 
     #[test]
