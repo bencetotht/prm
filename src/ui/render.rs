@@ -174,7 +174,7 @@ fn render_footer(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
         format!("Filter: {}", app.filter_input)
     } else {
         format!(
-            "{} | arrows/hjkl move | Tab panes | f fetch | g lazygit | a/r/x/d project | n/e/space/dd todo | ? help | Q quit",
+            "{} | arrows/hjkl move | Tab panes | f fetch | g lazygit | t terminal | a/r/x/d project | n/e/space/dd todo | ? help | Q quit",
             app.status
         )
     };
@@ -213,6 +213,7 @@ fn render_help_overlay(frame: &mut Frame<'_>) {
         Line::styled("Global", theme::header_style()),
         Line::from("/ filter projects by name/path (Enter apply, Esc cancel)"),
         Line::from("g opens lazygit for selected project (tmux popup when available)"),
+        Line::from("t opens a new tmux terminal window at selected project path"),
         Line::from("? toggles this help dialog"),
         Line::from("Q quits prm"),
         Line::from(""),

@@ -87,7 +87,13 @@ pub enum ConfirmAction {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ExternalCommand {
-    OpenLazyGit { project_path: String },
+    OpenLazyGit {
+        project_path: String,
+    },
+    OpenTmuxTerminal {
+        project_path: String,
+        project_name: String,
+    },
 }
 
 pub struct AppState {
@@ -313,6 +319,9 @@ impl AppState {
             }
             KeyCode::Char('g') => {
                 self.queue_lazygit_launch();
+            }
+            KeyCode::Char('t') => {
+                self.queue_terminal_launch();
             }
             KeyCode::Char('A') => {
                 if let Err(err) = self.toggle_show_archived() {
@@ -628,6 +637,19 @@ impl AppState {
 
         self.pending_external_command = Some(ExternalCommand::OpenLazyGit { project_path });
         self.status = "Opening lazygit...".to_string();
+    }
+
+    fn queue_terminal_launch(&mut self) {
+        let Some(project) = self.selected_project().cloned() else {
+            self.status = "No project selected".to_string();
+            return;
+        };
+
+        self.pending_external_command = Some(ExternalCommand::OpenTmuxTerminal {
+            project_path: project.path,
+            project_name: project.name,
+        });
+        self.status = "Opening project terminal...".to_string();
     }
 
     fn toggle_show_archived(&mut self) -> Result<()> {
@@ -1285,6 +1307,61 @@ mod tests {
         assert!(state.take_pending_external_command().is_none());
         match state.modal {
             Some(Modal::AddProject(ref add)) => assert_eq!(add.path, "g"),
+            _ => panic!("expected add-project modal"),
+        }
+    }
+
+    #[test]
+    fn terminal_shortcut_queues_external_command() {
+        let mut state = test_state();
+        let selected_project = state.selected_project().expect("project").clone();
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('t')));
+
+        assert_eq!(
+            state.take_pending_external_command(),
+            Some(ExternalCommand::OpenTmuxTerminal {
+                project_path: selected_project.path,
+                project_name: selected_project.name,
+            })
+        );
+    }
+
+    #[test]
+    fn terminal_shortcut_is_ignored_while_filtering() {
+        let mut state = test_state();
+        state.filter_mode = true;
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('t')));
+
+        assert!(state.take_pending_external_command().is_none());
+        assert_eq!(state.filter_input, "t");
+    }
+
+    #[test]
+    fn terminal_shortcut_is_ignored_while_help_is_open() {
+        let mut state = test_state();
+        state.show_help = true;
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('t')));
+
+        assert!(state.take_pending_external_command().is_none());
+    }
+
+    #[test]
+    fn terminal_shortcut_is_ignored_while_modal_is_open() {
+        let mut state = test_state();
+        state.modal = Some(Modal::AddProject(AddProjectModal {
+            path: String::new(),
+            name: String::new(),
+            active_field: AddProjectField::Path,
+        }));
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('t')));
+
+        assert!(state.take_pending_external_command().is_none());
+        match state.modal {
+            Some(Modal::AddProject(ref add)) => assert_eq!(add.path, "t"),
             _ => panic!("expected add-project modal"),
         }
     }

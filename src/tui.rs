@@ -102,6 +102,20 @@ fn handle_external_command(
                 }
             }
         }
+        ExternalCommand::OpenTmuxTerminal {
+            project_path,
+            project_name,
+        } => {
+            let path = Path::new(&project_path);
+            match open_tmux_terminal_window(path, &project_name) {
+                Ok(window_name) => {
+                    app.status = format!("Opened tmux terminal window `{window_name}`");
+                }
+                Err(err) => {
+                    app.status = format!("Failed to open tmux terminal: {err}");
+                }
+            }
+        }
     }
 }
 
@@ -167,10 +181,67 @@ fn ensure_lazygit_available() -> Result<()> {
     }
 }
 
-fn lazygit_launch_strategy(tmux_env: Option<&str>) -> LazyGitLaunchStrategy {
+fn open_tmux_terminal_window(project_path: &Path, project_name: &str) -> Result<String> {
+    if !has_tmux_session(std::env::var("TMUX").ok().as_deref()) {
+        return Err(anyhow!(
+            "not running inside tmux; terminal shortcut opens a tmux window"
+        ));
+    }
+
+    let window_name = tmux_window_name(project_name);
+    let output = Command::new("tmux")
+        .arg("new-window")
+        .arg("-c")
+        .arg(project_path)
+        .arg("-n")
+        .arg(&window_name)
+        .output()
+        .map_err(|err| {
+            if err.kind() == io::ErrorKind::NotFound {
+                anyhow!("tmux not found in PATH")
+            } else {
+                anyhow!("failed to run `tmux new-window`: {err}")
+            }
+        })?;
+
+    if output.status.success() {
+        Ok(window_name)
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.is_empty() {
+            Err(anyhow!("`tmux new-window` exited with non-zero status"))
+        } else {
+            Err(anyhow!("`tmux new-window` failed: {stderr}"))
+        }
+    }
+}
+
+fn has_tmux_session(tmux_env: Option<&str>) -> bool {
     match tmux_env.map(str::trim) {
-        Some(value) if !value.is_empty() => LazyGitLaunchStrategy::TryTmuxPopupFirst,
-        _ => LazyGitLaunchStrategy::FullscreenOnly,
+        Some(value) => !value.is_empty(),
+        None => false,
+    }
+}
+
+fn tmux_window_name(project_name: &str) -> String {
+    let mut name = if project_name.trim().is_empty() {
+        "prm-shell".to_string()
+    } else {
+        format!("prm:{}", project_name.trim())
+    };
+
+    if name.len() > 48 {
+        name.truncate(48);
+    }
+
+    name
+}
+
+fn lazygit_launch_strategy(tmux_env: Option<&str>) -> LazyGitLaunchStrategy {
+    if has_tmux_session(tmux_env) {
+        LazyGitLaunchStrategy::TryTmuxPopupFirst
+    } else {
+        LazyGitLaunchStrategy::FullscreenOnly
     }
 }
 
@@ -290,7 +361,10 @@ fn build_pane_areas(size: ratatui::layout::Size) -> PaneAreas {
 
 #[cfg(test)]
 mod tests {
-    use super::{LazyGitLaunchStrategy, lazygit_launch_strategy, should_fallback_to_fullscreen};
+    use super::{
+        LazyGitLaunchStrategy, has_tmux_session, lazygit_launch_strategy,
+        should_fallback_to_fullscreen, tmux_window_name,
+    };
 
     #[test]
     fn tmux_environment_prefers_popup_strategy() {
@@ -312,5 +386,19 @@ mod tests {
     fn popup_failure_triggers_fullscreen_fallback() {
         assert!(should_fallback_to_fullscreen(false));
         assert!(!should_fallback_to_fullscreen(true));
+    }
+
+    #[test]
+    fn tmux_presence_detection_handles_empty_values() {
+        assert!(has_tmux_session(Some("/tmp/tmux-1000/default,123,0")));
+        assert!(!has_tmux_session(Some("")));
+        assert!(!has_tmux_session(Some("   ")));
+        assert!(!has_tmux_session(None));
+    }
+
+    #[test]
+    fn tmux_window_name_uses_project_name_prefix() {
+        assert_eq!(tmux_window_name("demo"), "prm:demo");
+        assert_eq!(tmux_window_name(""), "prm-shell");
     }
 }
