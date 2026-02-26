@@ -14,6 +14,8 @@ use crate::fs::agents::{AgentsContent, load_agents_markdown};
 use crate::git::{GitHistory, GitProjectStatus, load_git_history, probe_project_status};
 use crate::pathing::resolve_project_path;
 
+const GIT_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FocusPane {
     Projects,
@@ -114,7 +116,7 @@ impl AppState {
             git_status_cache: HashMap::new(),
             git_history_cache: HashMap::new(),
             pending_todo_delete: false,
-            last_git_refresh: Instant::now() - Duration::from_secs(30),
+            last_git_refresh: Instant::now() - GIT_REFRESH_INTERVAL,
             quit: false,
         };
 
@@ -180,11 +182,11 @@ impl AppState {
     }
 
     pub fn tick(&mut self) {
-        if self.last_git_refresh.elapsed() < Duration::from_secs(5) {
+        if self.last_git_refresh.elapsed() < GIT_REFRESH_INTERVAL {
             return;
         }
 
-        self.refresh_git_tracking(false);
+        self.refresh_git_tracking(true);
     }
 
     pub fn handle_key_event(&mut self, key: KeyEvent) {
