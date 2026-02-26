@@ -1,0 +1,36 @@
+name: Nix Flake Check
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  flake-check:
+    name: Flake Check (${{ matrix.system }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            system: x86_64-linux
+          - os: macos-14
+            system: aarch64-darwin
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@v17
+
+      - name: Enable Nix cache
+        uses: DeterminateSystems/magic-nix-cache-action@v11
+
+      - name: Run flake checks
+        run: nix flake check --system ${{ matrix.system }}

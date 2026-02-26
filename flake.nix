@@ -4,9 +4,10 @@
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-25.05";
     flake-utils.url = "github:numtide/flake-utils";
+    rust-overlay.url = "github:oxalica/rust-overlay";
   };
 
-  outputs = { self, nixpkgs, flake-utils }:
+  outputs = { self, nixpkgs, flake-utils, rust-overlay }:
     flake-utils.lib.eachSystem [
       "x86_64-linux"
       "aarch64-linux"
@@ -14,16 +15,26 @@
       "aarch64-darwin"
     ] (system:
       let
-        pkgs = import nixpkgs { inherit system; };
+        pkgs = import nixpkgs {
+          inherit system;
+          overlays = [ (import rust-overlay) ];
+        };
+        rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
+        rustPlatform = pkgs.makeRustPlatform {
+          cargo = rustToolchain;
+          rustc = rustToolchain;
+        };
         cargoToml = builtins.fromTOML (builtins.readFile ./Cargo.toml);
         packageName = cargoToml.package.name;
         packageVersion = cargoToml.package.version;
       in
       {
-        packages.default = pkgs.rustPlatform.buildRustPackage {
+        packages.default = rustPlatform.buildRustPackage {
           pname = packageName;
           version = packageVersion;
           src = ./.;
+
+          nativeCheckInputs = [ pkgs.git ];
 
           cargoLock = {
             lockFile = ./Cargo.lock;
@@ -38,19 +49,16 @@
           };
         };
 
-        apps.default = flake-utils.lib.mkApp {
-          drv = self.packages.${system}.default;
+        apps.default = {
+          type = "app";
+          program = "${self.packages.${system}.default}/bin/${packageName}";
+          meta = self.packages.${system}.default.meta;
         };
 
         checks.default = self.packages.${system}.default;
 
         devShells.default = pkgs.mkShell {
-          packages = with pkgs; [
-            cargo
-            clippy
-            rustc
-            rustfmt
-          ];
+          packages = [ rustToolchain ];
         };
       });
 }
