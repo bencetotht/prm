@@ -12,7 +12,10 @@ use crate::db::repo::{MoveDirection, Repository, UpsertStatus};
 use crate::domain::project::Project;
 use crate::domain::todo::Todo;
 use crate::fs::agents::{AgentsContent, load_agents_markdown};
-use crate::git::{GitHistory, GitProjectStatus, load_git_history, probe_project_status};
+use crate::git::{
+    GitHistory, GitProjectStatus, GitRelease, load_git_history, load_git_release,
+    probe_project_status,
+};
 use crate::pathing::resolve_project_path;
 
 const GIT_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
@@ -100,6 +103,7 @@ pub struct AppState {
     pub(crate) agents_cache: HashMap<String, AgentsContent>,
     pub(crate) git_status_cache: HashMap<String, GitProjectStatus>,
     pub(crate) git_history_cache: HashMap<String, GitHistory>,
+    pub(crate) git_release_cache: HashMap<String, GitRelease>,
     pub(crate) pending_todo_delete: bool,
     last_git_refresh: Instant,
     last_db_refresh: Instant,
@@ -127,6 +131,7 @@ impl AppState {
             agents_cache: HashMap::new(),
             git_status_cache: HashMap::new(),
             git_history_cache: HashMap::new(),
+            git_release_cache: HashMap::new(),
             pending_todo_delete: false,
             last_git_refresh: Instant::now() - GIT_REFRESH_INTERVAL,
             last_db_refresh: Instant::now() - DB_REFRESH_INTERVAL,
@@ -181,6 +186,13 @@ impl AppState {
             .unwrap_or(GitProjectStatus::NotGit)
     }
 
+    pub fn project_git_release(&self, path: &str) -> GitRelease {
+        self.git_release_cache
+            .get(path)
+            .cloned()
+            .unwrap_or(GitRelease::NotGit)
+    }
+
     pub fn current_git_history(&mut self) -> GitHistory {
         let Some(project) = self.selected_project() else {
             return GitHistory::NotGit;
@@ -194,6 +206,21 @@ impl AppState {
         self.git_history_cache
             .insert(project.path.clone(), history.clone());
         history
+    }
+
+    pub fn current_git_release(&mut self) -> GitRelease {
+        let Some(project) = self.selected_project() else {
+            return GitRelease::NotGit;
+        };
+
+        if let Some(release) = self.git_release_cache.get(&project.path) {
+            return release.clone();
+        }
+
+        let release = load_git_release(Path::new(&project.path));
+        self.git_release_cache
+            .insert(project.path.clone(), release.clone());
+        release
     }
 
     pub fn tick(&mut self) {
@@ -559,6 +586,7 @@ impl AppState {
     fn fetch_now(&mut self) {
         self.agents_cache.clear();
         self.git_history_cache.clear();
+        self.git_release_cache.clear();
 
         match self.reload_projects() {
             Ok(()) => {
@@ -717,6 +745,7 @@ impl AppState {
                     self.status = format!("Failed to load todos: {err}");
                 }
                 self.refresh_selected_git_history(false);
+                self.refresh_selected_git_release(false);
                 self.agents_scroll = 0;
                 self.git_history_scroll = 0;
             }
@@ -746,6 +775,7 @@ impl AppState {
                     self.status = format!("Failed to load todos: {err}");
                 }
                 self.refresh_selected_git_history(false);
+                self.refresh_selected_git_release(false);
                 self.agents_scroll = 0;
                 self.git_history_scroll = 0;
             }
@@ -844,6 +874,7 @@ impl AppState {
 
         self.load_todos_for_selected_project()?;
         self.refresh_selected_git_history(true);
+        self.refresh_selected_git_release(true);
         self.agents_scroll = 0;
         self.git_history_scroll = 0;
         self.sync_external_db_version();
@@ -862,6 +893,7 @@ impl AppState {
             self.status = format!("Failed to load todos: {err}");
         }
         self.refresh_selected_git_history(true);
+        self.refresh_selected_git_release(true);
         self.git_history_scroll = 0;
     }
 
@@ -869,8 +901,10 @@ impl AppState {
         self.refresh_git_statuses();
         if include_history {
             self.refresh_selected_git_history(true);
+            self.refresh_selected_git_release(true);
         } else {
             self.refresh_selected_git_history(false);
+            self.refresh_selected_git_release(false);
         }
         self.last_git_refresh = Instant::now();
     }
@@ -909,12 +943,15 @@ impl AppState {
     }
 
     fn refresh_git_statuses(&mut self) {
-        let mut next = HashMap::with_capacity(self.projects.len());
+        let mut next_status = HashMap::with_capacity(self.projects.len());
+        let mut next_release = HashMap::with_capacity(self.projects.len());
         for project in &self.projects {
-            let status = probe_project_status(Path::new(&project.path));
-            next.insert(project.path.clone(), status);
+            let path = Path::new(&project.path);
+            next_status.insert(project.path.clone(), probe_project_status(path));
+            next_release.insert(project.path.clone(), load_git_release(path));
         }
-        self.git_status_cache = next;
+        self.git_status_cache = next_status;
+        self.git_release_cache = next_release;
     }
 
     fn refresh_selected_git_history(&mut self, force: bool) {
@@ -928,6 +965,19 @@ impl AppState {
 
         let history = load_git_history(Path::new(&project.path), 20);
         self.git_history_cache.insert(project.path, history);
+    }
+
+    fn refresh_selected_git_release(&mut self, force: bool) {
+        let Some(project) = self.selected_project().cloned() else {
+            return;
+        };
+
+        if !force && self.git_release_cache.contains_key(&project.path) {
+            return;
+        }
+
+        let release = load_git_release(Path::new(&project.path));
+        self.git_release_cache.insert(project.path, release);
     }
 }
 

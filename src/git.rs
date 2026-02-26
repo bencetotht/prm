@@ -22,6 +22,15 @@ pub enum GitHistory {
     Error(String),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GitRelease {
+    Tagged { tag: String, commits_ahead: u32 },
+    NoTags,
+    NoCommits,
+    NotGit,
+    Error(String),
+}
+
 impl GitProjectStatus {
     pub fn short_label(&self) -> &'static str {
         match self {
@@ -129,6 +138,41 @@ pub fn load_git_history(project_path: &Path, max_entries: usize) -> GitHistory {
     }
 }
 
+pub fn load_git_release(project_path: &Path) -> GitRelease {
+    if !is_git_repo(project_path) {
+        return GitRelease::NotGit;
+    }
+
+    if !cmd_ok(project_path, ["rev-parse", "--verify", "HEAD"]) {
+        return GitRelease::NoCommits;
+    }
+
+    let tag = match cmd_output(project_path, ["describe", "--tags", "--abbrev=0"]) {
+        Ok(value) => value.trim().to_string(),
+        Err(err) => {
+            if err.contains("No names found")
+                || err.contains("No tags can describe")
+                || err.contains("cannot describe")
+            {
+                return GitRelease::NoTags;
+            }
+            return GitRelease::Error(err);
+        }
+    };
+
+    if tag.is_empty() {
+        return GitRelease::NoTags;
+    }
+
+    let range = format!("{tag}..HEAD");
+    let commits_ahead = match cmd_output(project_path, ["rev-list", "--count", range.as_str()]) {
+        Ok(value) => value.trim().parse::<u32>().unwrap_or(0),
+        Err(err) => return GitRelease::Error(err),
+    };
+
+    GitRelease::Tagged { tag, commits_ahead }
+}
+
 fn is_git_repo(project_path: &Path) -> bool {
     cmd_ok(project_path, ["rev-parse", "--is-inside-work-tree"])
 }
@@ -168,13 +212,17 @@ mod tests {
     use std::path::Path;
     use std::process::Command;
 
-    use super::{GitHistory, GitProjectStatus, load_git_history, probe_project_status};
+    use super::{
+        GitHistory, GitProjectStatus, GitRelease, load_git_history, load_git_release,
+        probe_project_status,
+    };
 
     #[test]
     fn non_git_repo_is_reported_as_not_git() {
         let dir = tempfile::tempdir().expect("tempdir");
         assert_eq!(probe_project_status(dir.path()), GitProjectStatus::NotGit);
         assert_eq!(load_git_history(dir.path(), 10), GitHistory::NotGit);
+        assert_eq!(load_git_release(dir.path()), GitRelease::NotGit);
     }
 
     #[test]
@@ -259,6 +307,31 @@ mod tests {
             }
             other => panic!("expected history lines, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn repo_without_tags_reports_no_tags_release() {
+        let repo = temp_git_repo();
+        write_and_commit(repo.path(), "README.md", "hello", "init");
+
+        assert_eq!(load_git_release(repo.path()), GitRelease::NoTags);
+    }
+
+    #[test]
+    fn tagged_repo_reports_release_tag_and_commit_distance() {
+        let repo = temp_git_repo();
+        write_and_commit(repo.path(), "README.md", "one", "init");
+        run_in(repo.path(), ["git", "tag", "v0.1.0"]);
+
+        write_and_commit(repo.path(), "README.md", "two", "next");
+        let release = load_git_release(repo.path());
+        assert_eq!(
+            release,
+            GitRelease::Tagged {
+                tag: "v0.1.0".to_string(),
+                commits_ahead: 1,
+            }
+        );
     }
 
     fn temp_git_repo() -> tempfile::TempDir {

@@ -7,5 +7,5 @@ pub fn version() -> &'static str {
 }
 
 pub fn copyright_line() -> String {
-    format!("Copyright (c) {} prm contributors", Utc::now().year())
+    format!("Copyright (c) {} Bence Toth", Utc::now().year())
 }

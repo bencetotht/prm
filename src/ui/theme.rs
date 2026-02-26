@@ -24,6 +24,12 @@ pub fn done_todo_style() -> Style {
     Style::default().fg(Color::DarkGray)
 }
 
+pub fn muted_style() -> Style {
+    Style::default()
+        .fg(Color::DarkGray)
+        .add_modifier(Modifier::DIM)
+}
+
 pub fn status_style() -> Style {
     Style::default().fg(Color::Green)
 }

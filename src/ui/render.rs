@@ -3,7 +3,7 @@ use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph, Wrap}
 
 use crate::app::state::{AddProjectField, AppState, FocusPane, Modal};
 use crate::fs::agents::AgentsContent;
-use crate::git::GitHistory;
+use crate::git::{GitHistory, GitRelease};
 use crate::meta;
 use crate::ui::layout::{centered_rect, split_main, split_right_column};
 use crate::ui::theme;
@@ -53,6 +53,7 @@ fn render_projects(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
         .map(|project| {
             let marker = if project.archived { "[A]" } else { "   " };
             let git_status = app.project_git_status(&project.path);
+            let release = app.project_git_release(&project.path);
             ListItem::new(Line::from(vec![
                 Span::raw(format!("{marker} ")),
                 Span::styled(
@@ -60,6 +61,7 @@ fn render_projects(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                     theme::git_status_style(&git_status),
                 ),
                 Span::raw(format!(" {}", project.name)),
+                Span::styled(project_release_suffix(release), theme::muted_style()),
             ]))
         })
         .collect::<Vec<_>>();
@@ -72,6 +74,16 @@ fn render_projects(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     let mut state = ListState::default();
     state.select(Some(app.selected_project));
     frame.render_stateful_widget(list, area, &mut state);
+}
+
+fn project_release_suffix(release: GitRelease) -> String {
+    match release {
+        GitRelease::Tagged { tag, .. } => format!("  {tag}"),
+        GitRelease::NoTags => String::new(),
+        GitRelease::NoCommits => "  no-commits".to_string(),
+        GitRelease::NotGit => String::new(),
+        GitRelease::Error(_) => "  tag-error".to_string(),
+    }
 }
 
 fn render_todos(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
@@ -127,12 +139,28 @@ fn render_agents(frame: &mut Frame<'_>, app: &mut AppState, area: Rect) {
 
 fn render_git_history(frame: &mut Frame<'_>, app: &mut AppState, area: Rect) {
     let block = pane_block("[4] Git history", app.focus == FocusPane::GitHistory);
-    let body = match app.current_git_history() {
+    let mut body = match app.current_git_history() {
         GitHistory::NotGit => vec![Line::from("Not a git repository")],
         GitHistory::Empty => vec![Line::from("No commits yet")],
         GitHistory::Error(err) => vec![Line::from(format!("Read error: {err}"))],
         GitHistory::Lines(lines) => lines.into_iter().map(Line::from).collect(),
     };
+
+    let release_line = match app.current_git_release() {
+        GitRelease::Tagged { tag, commits_ahead } if commits_ahead == 0 => {
+            format!("Release: {tag} (HEAD at tag)")
+        }
+        GitRelease::Tagged { tag, commits_ahead } => {
+            format!("Release: {tag} (+{commits_ahead} commits)")
+        }
+        GitRelease::NoTags => "Release: no tags in history".to_string(),
+        GitRelease::NoCommits => "Release: no commits yet".to_string(),
+        GitRelease::NotGit => "Release: n/a (not a git repository)".to_string(),
+        GitRelease::Error(err) => format!("Release: read error ({err})"),
+    };
+
+    body.insert(0, Line::from(""));
+    body.insert(0, Line::styled(release_line, theme::header_style()));
 
     let paragraph = Paragraph::new(body)
         .block(block)
@@ -193,6 +221,7 @@ fn render_help_overlay(frame: &mut Frame<'_>) {
         Line::from("x archive/unarchive selected project"),
         Line::from("d delete selected project (confirmation modal)"),
         Line::from("A toggle showing archived projects"),
+        Line::from("Dim suffix in project rows shows the latest reachable git tag"),
         Line::from(
             "Git badge legend: CHG changed, PUSH waiting to push, COMMIT local-only, OK synced",
         ),
@@ -204,6 +233,7 @@ fn render_help_overlay(frame: &mut Frame<'_>) {
         Line::from(""),
         Line::styled("Text panes", theme::header_style()),
         Line::from("[3] AGENTS.md and [4] Git history support keyboard + mouse scrolling"),
+        Line::from("[4] also shows nearest release tag and commit distance from that tag"),
         Line::from(""),
         Line::styled("Build Info", theme::header_style()),
         Line::from(metadata),
