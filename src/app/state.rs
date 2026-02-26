@@ -3,7 +3,8 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
-use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+use crossterm::event::{KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind};
+use ratatui::layout::Rect;
 
 use crate::app::actions::Action;
 use crate::app::events;
@@ -22,6 +23,14 @@ pub enum FocusPane {
     Todos,
     Agents,
     GitHistory,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct PaneAreas {
+    pub projects: Rect,
+    pub todos: Rect,
+    pub agents: Rect,
+    pub git_history: Rect,
 }
 
 #[derive(Debug, Clone)]
@@ -236,6 +245,12 @@ impl AppState {
                 self.focus = self.focus.next();
                 self.pending_todo_delete = false;
             }
+            KeyCode::Char('1') => self.set_focus(FocusPane::Projects),
+            KeyCode::Char('2') => self.set_focus(FocusPane::Todos),
+            KeyCode::Char('3') => self.set_focus(FocusPane::Agents),
+            KeyCode::Char('4') => self.set_focus(FocusPane::GitHistory),
+            KeyCode::Left => self.set_focus(self.focus.prev()),
+            KeyCode::Right => self.set_focus(self.focus.next()),
             KeyCode::Char('/') => {
                 self.filter_mode = true;
             }
@@ -250,8 +265,8 @@ impl AppState {
             KeyCode::Char('q') => {
                 self.status = "Press Q to quit".to_string();
             }
-            KeyCode::Char('j') => self.move_down(),
-            KeyCode::Char('k') => self.move_up(),
+            KeyCode::Char('j') | KeyCode::Down => self.move_down(),
+            KeyCode::Char('k') | KeyCode::Up => self.move_up(),
             KeyCode::Char('J') => {
                 if self.focus == FocusPane::Todos {
                     self.move_selected_todo(MoveDirection::Down);
@@ -329,6 +344,25 @@ impl AppState {
                         self.status = "Toggled todo".to_string();
                     }
                 }
+            }
+            _ => {}
+        }
+    }
+
+    pub fn handle_mouse_event(&mut self, mouse: MouseEvent, pane_areas: PaneAreas) {
+        if self.show_help || self.modal.is_some() || self.filter_mode {
+            return;
+        }
+
+        match mouse.kind {
+            MouseEventKind::Down(MouseButton::Left) => {
+                self.handle_mouse_click(mouse.column, mouse.row, pane_areas);
+            }
+            MouseEventKind::ScrollDown => {
+                self.handle_mouse_scroll(mouse.column, mouse.row, pane_areas, true);
+            }
+            MouseEventKind::ScrollUp => {
+                self.handle_mouse_scroll(mouse.column, mouse.row, pane_areas, false);
             }
             _ => {}
         }
@@ -578,6 +612,72 @@ impl AppState {
         }
     }
 
+    fn handle_mouse_click(&mut self, column: u16, row: u16, pane_areas: PaneAreas) {
+        let Some(pane) = pane_areas.pane_at(column, row) else {
+            return;
+        };
+
+        self.set_focus(pane);
+
+        match pane {
+            FocusPane::Projects => {
+                self.select_project_at_row(row, pane_areas.projects);
+            }
+            FocusPane::Todos => {
+                self.select_todo_at_row(row, pane_areas.todos);
+            }
+            FocusPane::Agents => {}
+            FocusPane::GitHistory => {}
+        }
+    }
+
+    fn handle_mouse_scroll(&mut self, column: u16, row: u16, pane_areas: PaneAreas, down: bool) {
+        let Some(pane) = pane_areas.pane_at(column, row) else {
+            return;
+        };
+
+        self.set_focus(pane);
+
+        if down {
+            self.move_down();
+        } else {
+            self.move_up();
+        }
+    }
+
+    fn select_project_at_row(&mut self, row: u16, area: Rect) {
+        let Some(index) = pane_list_index(area, row) else {
+            return;
+        };
+        if self.projects.is_empty() || index >= self.projects.len() {
+            return;
+        }
+
+        self.selected_project = index;
+        if let Err(err) = self.load_todos_for_selected_project() {
+            self.status = format!("Failed to load todos: {err}");
+        }
+        self.refresh_selected_git_history(false);
+        self.agents_scroll = 0;
+        self.git_history_scroll = 0;
+    }
+
+    fn select_todo_at_row(&mut self, row: u16, area: Rect) {
+        let Some(index) = pane_list_index(area, row) else {
+            return;
+        };
+        if self.todos.is_empty() || index >= self.todos.len() {
+            return;
+        }
+
+        self.selected_todo = index;
+    }
+
+    fn set_focus(&mut self, pane: FocusPane) {
+        self.focus = pane;
+        self.pending_todo_delete = false;
+    }
+
     fn move_down(&mut self) {
         match self.focus {
             FocusPane::Projects => {
@@ -789,13 +889,52 @@ impl FocusPane {
     }
 }
 
+impl PaneAreas {
+    fn pane_at(&self, column: u16, row: u16) -> Option<FocusPane> {
+        if rect_contains(self.projects, column, row) {
+            Some(FocusPane::Projects)
+        } else if rect_contains(self.todos, column, row) {
+            Some(FocusPane::Todos)
+        } else if rect_contains(self.agents, column, row) {
+            Some(FocusPane::Agents)
+        } else if rect_contains(self.git_history, column, row) {
+            Some(FocusPane::GitHistory)
+        } else {
+            None
+        }
+    }
+}
+
+fn rect_contains(rect: Rect, column: u16, row: u16) -> bool {
+    let max_x = rect.x.saturating_add(rect.width);
+    let max_y = rect.y.saturating_add(rect.height);
+    column >= rect.x && column < max_x && row >= rect.y && row < max_y
+}
+
+fn pane_list_index(area: Rect, row: u16) -> Option<usize> {
+    if area.height <= 2 {
+        return None;
+    }
+
+    let list_start = area.y.saturating_add(1);
+    let list_end = area.y.saturating_add(area.height.saturating_sub(1));
+    if row < list_start || row >= list_end {
+        return None;
+    }
+
+    Some(usize::from(row.saturating_sub(list_start)))
+}
+
 #[cfg(test)]
 mod tests {
-    use crossterm::event::{KeyCode, KeyEvent};
+    use crossterm::event::{
+        KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
+    };
+    use ratatui::layout::Rect;
 
     use crate::db::repo::Repository;
 
-    use super::{AppState, FocusPane};
+    use super::{AppState, FocusPane, PaneAreas};
 
     fn test_state() -> AppState {
         let repo = Repository::open_in_memory().expect("repo");
@@ -846,6 +985,73 @@ mod tests {
 
         state.handle_key_event(KeyEvent::from(KeyCode::Char('k')));
         assert_eq!(state.git_history_scroll, 0);
+    }
+
+    #[test]
+    fn pane_focus_shortcuts_use_number_keys() {
+        let mut state = test_state();
+        assert_eq!(state.focus, FocusPane::Projects);
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('2')));
+        assert_eq!(state.focus, FocusPane::Todos);
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('3')));
+        assert_eq!(state.focus, FocusPane::Agents);
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('4')));
+        assert_eq!(state.focus, FocusPane::GitHistory);
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('1')));
+        assert_eq!(state.focus, FocusPane::Projects);
+    }
+
+    #[test]
+    fn arrow_keys_navigate_between_panes_and_rows() {
+        let mut state = test_state();
+        state.focus = FocusPane::GitHistory;
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Down));
+        assert_eq!(state.git_history_scroll, 1);
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Up));
+        assert_eq!(state.git_history_scroll, 0);
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Left));
+        assert_eq!(state.focus, FocusPane::Agents);
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Right));
+        assert_eq!(state.focus, FocusPane::GitHistory);
+    }
+
+    #[test]
+    fn mouse_click_focuses_pane_and_selects_rows() {
+        let mut state = test_state();
+        let second_project_dir = tempfile::tempdir().expect("second project dir");
+        state
+            .repo
+            .upsert_project(second_project_dir.path(), Some("demo-2"))
+            .expect("insert second project");
+        state.reload_projects().expect("reload projects");
+
+        let panes = PaneAreas {
+            projects: Rect::new(0, 0, 20, 10),
+            todos: Rect::new(21, 0, 20, 10),
+            agents: Rect::new(42, 0, 20, 5),
+            git_history: Rect::new(42, 5, 20, 5),
+        };
+
+        state.handle_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::Down(MouseButton::Left),
+                column: 1,
+                row: 2,
+                modifiers: KeyModifiers::empty(),
+            },
+            panes,
+        );
+
+        assert_eq!(state.focus, FocusPane::Projects);
+        assert_eq!(state.selected_project, 1);
     }
 
     #[test]

@@ -29,9 +29,9 @@ pub fn render(frame: &mut Frame<'_>, app: &mut AppState) {
 
 fn render_projects(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     let title = if app.filter_input.is_empty() {
-        "Projects"
+        "[1] Projects"
     } else {
-        "Projects (filtered)"
+        "[1] Projects (filtered)"
     };
     let block = pane_block(title, app.focus == FocusPane::Projects);
 
@@ -74,7 +74,7 @@ fn render_projects(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
 }
 
 fn render_todos(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
-    let block = pane_block("Todos", app.focus == FocusPane::Todos);
+    let block = pane_block("[2] Todos", app.focus == FocusPane::Todos);
 
     if app.todos.is_empty() {
         let text = vec![Line::from("No todos"), Line::from("Press n to add one")];
@@ -108,7 +108,7 @@ fn render_todos(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
 }
 
 fn render_agents(frame: &mut Frame<'_>, app: &mut AppState, area: Rect) {
-    let block = pane_block("AGENTS.md", app.focus == FocusPane::Agents);
+    let block = pane_block("[3] AGENTS.md", app.focus == FocusPane::Agents);
 
     let body = match app.current_agents_content() {
         AgentsContent::Missing => "No AGENTS.md found".to_string(),
@@ -125,7 +125,7 @@ fn render_agents(frame: &mut Frame<'_>, app: &mut AppState, area: Rect) {
 }
 
 fn render_git_history(frame: &mut Frame<'_>, app: &mut AppState, area: Rect) {
-    let block = pane_block("Git history", app.focus == FocusPane::GitHistory);
+    let block = pane_block("[4] Git history", app.focus == FocusPane::GitHistory);
     let body = match app.current_git_history() {
         GitHistory::NotGit => vec![Line::from("Not a git repository")],
         GitHistory::Empty => vec![Line::from("No commits yet")],
@@ -145,7 +145,7 @@ fn render_footer(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
         format!("Filter: {}", app.filter_input)
     } else {
         format!(
-            "{} | h/j/k/l move | Tab panes | a/r/x/d project | n/e/space/dd todo | ? help | Q quit",
+            "{} | 1-4 panes | arrows/hjkl move | Tab panes | mouse click/scroll | a/r/x/d project | n/e/space/dd todo | ? help | Q quit",
             app.status
         )
     };
@@ -165,7 +165,9 @@ fn render_help_overlay(frame: &mut Frame<'_>) {
         Line::styled("PRM Keymap", theme::header_style()),
         Line::from(""),
         Line::styled("Global", theme::header_style()),
-        Line::from("h/j/k/l move, Tab/Shift-Tab pane, / filter, q close, Q quit, ? help"),
+        Line::from(
+            "1/2/3/4 focus pane, arrows or h/j/k/l move, Tab/Shift-Tab pane, mouse click/scroll, / filter, q close, Q quit, ? help",
+        ),
         Line::from(""),
         Line::styled("Projects pane", theme::header_style()),
         Line::from("a add, r rename, x archive/unarchive, d delete(confirm), A toggle archived"),
@@ -180,7 +182,7 @@ fn render_help_overlay(frame: &mut Frame<'_>) {
         Line::from("j/k scroll content"),
         Line::from(""),
         Line::styled("Git history pane", theme::header_style()),
-        Line::from("Tab to focus, j/k scroll commits"),
+        Line::from("Tab/4 to focus, arrows or j/k scroll commits"),
     ];
 
     let widget = Paragraph::new(lines)
