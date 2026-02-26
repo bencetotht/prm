@@ -34,6 +34,7 @@ fn run_loop(
     app: &mut AppState,
 ) -> Result<()> {
     loop {
+        app.tick();
         terminal.draw(|frame| ui::render::render(frame, app))?;
 
         if app.should_quit() {

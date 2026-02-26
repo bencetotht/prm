@@ -3,16 +3,19 @@ use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph, Wrap}
 
 use crate::app::state::{AddProjectField, AppState, FocusPane, Modal};
 use crate::fs::agents::AgentsContent;
-use crate::ui::layout::{centered_rect, split_main};
+use crate::git::GitHistory;
+use crate::ui::layout::{centered_rect, split_main, split_right_column};
 use crate::ui::theme;
 use crate::ui::widgets::pane_block;
 
 pub fn render(frame: &mut Frame<'_>, app: &mut AppState) {
     let (panes, footer) = split_main(frame.area());
+    let (right_top, right_bottom) = split_right_column(panes[2]);
 
     render_projects(frame, app, panes[0]);
     render_todos(frame, app, panes[1]);
-    render_agents(frame, app, panes[2]);
+    render_agents(frame, app, right_top);
+    render_git_history(frame, app, right_bottom);
     render_footer(frame, app, footer);
 
     if app.show_help {
@@ -48,7 +51,15 @@ fn render_projects(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
         .iter()
         .map(|project| {
             let marker = if project.archived { "[A]" } else { "   " };
-            ListItem::new(Line::from(format!("{marker} {}", project.name)))
+            let git_status = app.project_git_status(&project.path);
+            ListItem::new(Line::from(vec![
+                Span::raw(format!("{marker} ")),
+                Span::styled(
+                    format!("[{}]", git_status.short_label()),
+                    theme::git_status_style(&git_status),
+                ),
+                Span::raw(format!(" {}", project.name)),
+            ]))
         })
         .collect::<Vec<_>>();
 
@@ -113,6 +124,22 @@ fn render_agents(frame: &mut Frame<'_>, app: &mut AppState, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
+fn render_git_history(frame: &mut Frame<'_>, app: &mut AppState, area: Rect) {
+    let block = pane_block("Git history", app.focus == FocusPane::GitHistory);
+    let body = match app.current_git_history() {
+        GitHistory::NotGit => vec![Line::from("Not a git repository")],
+        GitHistory::Empty => vec![Line::from("No commits yet")],
+        GitHistory::Error(err) => vec![Line::from(format!("Read error: {err}"))],
+        GitHistory::Lines(lines) => lines.into_iter().map(Line::from).collect(),
+    };
+
+    let paragraph = Paragraph::new(body)
+        .block(block)
+        .wrap(Wrap { trim: false })
+        .scroll((app.git_history_scroll, 0));
+    frame.render_widget(paragraph, area);
+}
+
 fn render_footer(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     let content = if app.filter_mode {
         format!("Filter: {}", app.filter_input)
@@ -142,12 +169,18 @@ fn render_help_overlay(frame: &mut Frame<'_>) {
         Line::from(""),
         Line::styled("Projects pane", theme::header_style()),
         Line::from("a add, r rename, x archive/unarchive, d delete(confirm), A toggle archived"),
+        Line::from(
+            "Git badge legend: CHG changed, PUSH waiting to push, COMMIT local-only, OK synced",
+        ),
         Line::from(""),
         Line::styled("Todos pane", theme::header_style()),
         Line::from("n new, e/Enter edit, Space toggle done, dd delete, J/K reorder"),
         Line::from(""),
         Line::styled("AGENTS pane", theme::header_style()),
         Line::from("j/k scroll content"),
+        Line::from(""),
+        Line::styled("Git history pane", theme::header_style()),
+        Line::from("Tab to focus, j/k scroll commits"),
     ];
 
     let widget = Paragraph::new(lines)

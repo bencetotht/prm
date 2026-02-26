@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -10,6 +11,7 @@ use crate::db::repo::{MoveDirection, Repository, UpsertStatus};
 use crate::domain::project::Project;
 use crate::domain::todo::Todo;
 use crate::fs::agents::{AgentsContent, load_agents_markdown};
+use crate::git::{GitHistory, GitProjectStatus, load_git_history, probe_project_status};
 use crate::pathing::resolve_project_path;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -17,6 +19,7 @@ pub enum FocusPane {
     Projects,
     Todos,
     Agents,
+    GitHistory,
 }
 
 #[derive(Debug, Clone)]
@@ -81,8 +84,12 @@ pub struct AppState {
     pub(crate) status: String,
     pub(crate) modal: Option<Modal>,
     pub(crate) agents_scroll: u16,
+    pub(crate) git_history_scroll: u16,
     pub(crate) agents_cache: HashMap<String, AgentsContent>,
+    pub(crate) git_status_cache: HashMap<String, GitProjectStatus>,
+    pub(crate) git_history_cache: HashMap<String, GitHistory>,
     pub(crate) pending_todo_delete: bool,
+    last_git_refresh: Instant,
     quit: bool,
 }
 
@@ -102,8 +109,12 @@ impl AppState {
             status: String::from("Ready"),
             modal: None,
             agents_scroll: 0,
+            git_history_scroll: 0,
             agents_cache: HashMap::new(),
+            git_status_cache: HashMap::new(),
+            git_history_cache: HashMap::new(),
             pending_todo_delete: false,
+            last_git_refresh: Instant::now() - Duration::from_secs(30),
             quit: false,
         };
 
@@ -144,6 +155,36 @@ impl AppState {
         self.agents_cache
             .insert(project.path.clone(), content.clone());
         content
+    }
+
+    pub fn project_git_status(&self, path: &str) -> GitProjectStatus {
+        self.git_status_cache
+            .get(path)
+            .cloned()
+            .unwrap_or(GitProjectStatus::NotGit)
+    }
+
+    pub fn current_git_history(&mut self) -> GitHistory {
+        let Some(project) = self.selected_project() else {
+            return GitHistory::NotGit;
+        };
+
+        if let Some(history) = self.git_history_cache.get(&project.path) {
+            return history.clone();
+        }
+
+        let history = load_git_history(Path::new(&project.path), 20);
+        self.git_history_cache
+            .insert(project.path.clone(), history.clone());
+        history
+    }
+
+    pub fn tick(&mut self) {
+        if self.last_git_refresh.elapsed() < Duration::from_secs(5) {
+            return;
+        }
+
+        self.refresh_git_tracking(false);
     }
 
     pub fn handle_key_event(&mut self, key: KeyEvent) {
@@ -531,6 +572,7 @@ impl AppState {
                 }
             }
             FocusPane::Agents => {}
+            FocusPane::GitHistory => {}
         }
     }
 
@@ -544,7 +586,9 @@ impl AppState {
                 if let Err(err) = self.load_todos_for_selected_project() {
                     self.status = format!("Failed to load todos: {err}");
                 }
+                self.refresh_selected_git_history(false);
                 self.agents_scroll = 0;
+                self.git_history_scroll = 0;
             }
             FocusPane::Todos => {
                 if self.todos.is_empty() {
@@ -554,6 +598,9 @@ impl AppState {
             }
             FocusPane::Agents => {
                 self.agents_scroll = self.agents_scroll.saturating_add(1);
+            }
+            FocusPane::GitHistory => {
+                self.git_history_scroll = self.git_history_scroll.saturating_add(1);
             }
         }
     }
@@ -568,7 +615,9 @@ impl AppState {
                 if let Err(err) = self.load_todos_for_selected_project() {
                     self.status = format!("Failed to load todos: {err}");
                 }
+                self.refresh_selected_git_history(false);
                 self.agents_scroll = 0;
+                self.git_history_scroll = 0;
             }
             FocusPane::Todos => {
                 if self.todos.is_empty() {
@@ -578,6 +627,9 @@ impl AppState {
             }
             FocusPane::Agents => {
                 self.agents_scroll = self.agents_scroll.saturating_sub(1);
+            }
+            FocusPane::GitHistory => {
+                self.git_history_scroll = self.git_history_scroll.saturating_sub(1);
             }
         }
     }
@@ -637,6 +689,7 @@ impl AppState {
         let previous_id = self.selected_project_id();
         let filter = Some(self.filter_input.as_str()).filter(|value| !value.trim().is_empty());
         self.projects = self.repo.list_projects(self.show_archived, filter)?;
+        self.refresh_git_statuses();
 
         if self.projects.is_empty() {
             self.selected_project = 0;
@@ -660,7 +713,9 @@ impl AppState {
         }
 
         self.load_todos_for_selected_project()?;
+        self.refresh_selected_git_history(true);
         self.agents_scroll = 0;
+        self.git_history_scroll = 0;
         Ok(())
     }
 
@@ -675,6 +730,40 @@ impl AppState {
         if let Err(err) = self.load_todos_for_selected_project() {
             self.status = format!("Failed to load todos: {err}");
         }
+        self.refresh_selected_git_history(true);
+        self.git_history_scroll = 0;
+    }
+
+    fn refresh_git_tracking(&mut self, include_history: bool) {
+        self.refresh_git_statuses();
+        if include_history {
+            self.refresh_selected_git_history(true);
+        } else {
+            self.refresh_selected_git_history(false);
+        }
+        self.last_git_refresh = Instant::now();
+    }
+
+    fn refresh_git_statuses(&mut self) {
+        let mut next = HashMap::with_capacity(self.projects.len());
+        for project in &self.projects {
+            let status = probe_project_status(Path::new(&project.path));
+            next.insert(project.path.clone(), status);
+        }
+        self.git_status_cache = next;
+    }
+
+    fn refresh_selected_git_history(&mut self, force: bool) {
+        let Some(project) = self.selected_project().cloned() else {
+            return;
+        };
+
+        if !force && self.git_history_cache.contains_key(&project.path) {
+            return;
+        }
+
+        let history = load_git_history(Path::new(&project.path), 20);
+        self.git_history_cache.insert(project.path, history);
     }
 }
 
@@ -683,15 +772,17 @@ impl FocusPane {
         match self {
             Self::Projects => Self::Todos,
             Self::Todos => Self::Agents,
-            Self::Agents => Self::Projects,
+            Self::Agents => Self::GitHistory,
+            Self::GitHistory => Self::Projects,
         }
     }
 
     fn prev(self) -> Self {
         match self {
-            Self::Projects => Self::Agents,
+            Self::Projects => Self::GitHistory,
             Self::Todos => Self::Projects,
             Self::Agents => Self::Todos,
+            Self::GitHistory => Self::Agents,
         }
     }
 }
@@ -723,8 +814,11 @@ mod tests {
         state.handle_key_event(KeyEvent::from(KeyCode::Tab));
         assert_eq!(state.focus, FocusPane::Agents);
 
+        state.handle_key_event(KeyEvent::from(KeyCode::Tab));
+        assert_eq!(state.focus, FocusPane::GitHistory);
+
         state.handle_key_event(KeyEvent::from(KeyCode::BackTab));
-        assert_eq!(state.focus, FocusPane::Todos);
+        assert_eq!(state.focus, FocusPane::Agents);
     }
 
     #[test]
@@ -738,6 +832,18 @@ mod tests {
         state.handle_key_event(KeyEvent::from(KeyCode::Char('A')));
         assert_eq!(state.project_count(), 1);
         assert_eq!(state.selected_project().expect("project").id, project_id);
+    }
+
+    #[test]
+    fn git_history_pane_scrolls_with_j_k() {
+        let mut state = test_state();
+        state.focus = FocusPane::GitHistory;
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('j')));
+        assert_eq!(state.git_history_scroll, 1);
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('k')));
+        assert_eq!(state.git_history_scroll, 0);
     }
 
     #[test]

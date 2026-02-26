@@ -3,6 +3,7 @@ pub mod cli;
 pub mod db;
 pub mod domain;
 pub mod fs;
+pub mod git;
 pub mod pathing;
 pub mod tui;
 pub mod ui;

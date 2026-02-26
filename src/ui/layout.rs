@@ -18,6 +18,14 @@ pub fn split_main(area: Rect) -> ([Rect; 3], Rect) {
     ([panes[0], panes[1], panes[2]], vertical[1])
 }
 
+pub fn split_right_column(area: Rect) -> (Rect, Rect) {
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Percentage(55), Constraint::Percentage(45)])
+        .split(area);
+    (chunks[0], chunks[1])
+}
+
 pub fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     let popup_layout = Layout::default()
         .direction(Direction::Vertical)
