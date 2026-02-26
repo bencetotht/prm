@@ -115,21 +115,21 @@ impl Repository {
 
         if let Some(project) = existing {
             let trimmed_name = name.map(str::trim).filter(|value| !value.is_empty());
-            if let Some(next_name) = trimmed_name {
-                if next_name != project.name {
-                    let now = now_ts();
-                    self.conn.execute(
-                        "UPDATE projects SET name = ?1, updated_at = ?2 WHERE id = ?3",
-                        params![next_name, now, project.id],
-                    )?;
-                    let updated = self
-                        .get_project(project.id)?
-                        .ok_or_else(|| anyhow!("project disappeared after update"))?;
-                    return Ok(UpsertResult {
-                        status: UpsertStatus::Updated,
-                        project: updated,
-                    });
-                }
+            if let Some(next_name) = trimmed_name
+                && next_name != project.name
+            {
+                let now = now_ts();
+                self.conn.execute(
+                    "UPDATE projects SET name = ?1, updated_at = ?2 WHERE id = ?3",
+                    params![next_name, now, project.id],
+                )?;
+                let updated = self
+                    .get_project(project.id)?
+                    .ok_or_else(|| anyhow!("project disappeared after update"))?;
+                return Ok(UpsertResult {
+                    status: UpsertStatus::Updated,
+                    project: updated,
+                });
             }
 
             return Ok(UpsertResult {

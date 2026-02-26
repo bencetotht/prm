@@ -272,61 +272,61 @@ impl AppState {
                 }
             }
             KeyCode::Char('r') => {
-                if self.focus == FocusPane::Projects {
-                    if let Some(project) = self.selected_project() {
-                        self.modal = Some(Modal::Input(SingleInputModal {
-                            title: "Rename project".to_string(),
-                            prompt: "Name".to_string(),
-                            value: project.name.clone(),
-                            purpose: InputPurpose::RenameProject(project.id),
-                        }));
-                    }
+                if self.focus == FocusPane::Projects
+                    && let Some(project) = self.selected_project()
+                {
+                    self.modal = Some(Modal::Input(SingleInputModal {
+                        title: "Rename project".to_string(),
+                        prompt: "Name".to_string(),
+                        value: project.name.clone(),
+                        purpose: InputPurpose::RenameProject(project.id),
+                    }));
                 }
             }
             KeyCode::Char('x') => {
-                if self.focus == FocusPane::Projects {
-                    if let Err(err) = self.toggle_archive_selected() {
-                        self.status = format!("Failed to archive project: {err}");
-                    }
+                if self.focus == FocusPane::Projects
+                    && let Err(err) = self.toggle_archive_selected()
+                {
+                    self.status = format!("Failed to archive project: {err}");
                 }
             }
             KeyCode::Char('d') => {
                 self.handle_delete_key();
             }
             KeyCode::Char('n') => {
-                if self.focus == FocusPane::Todos {
-                    if let Some(project) = self.selected_project() {
-                        self.modal = Some(Modal::Input(SingleInputModal {
-                            title: "Add todo".to_string(),
-                            prompt: "Todo".to_string(),
-                            value: String::new(),
-                            purpose: InputPurpose::AddTodo(project.id),
-                        }));
-                    }
+                if self.focus == FocusPane::Todos
+                    && let Some(project) = self.selected_project()
+                {
+                    self.modal = Some(Modal::Input(SingleInputModal {
+                        title: "Add todo".to_string(),
+                        prompt: "Todo".to_string(),
+                        value: String::new(),
+                        purpose: InputPurpose::AddTodo(project.id),
+                    }));
                 }
             }
             KeyCode::Char('e') | KeyCode::Enter => {
-                if self.focus == FocusPane::Todos {
-                    if let Some(todo) = self.selected_todo() {
-                        self.modal = Some(Modal::Input(SingleInputModal {
-                            title: "Edit todo".to_string(),
-                            prompt: "Todo".to_string(),
-                            value: todo.title.clone(),
-                            purpose: InputPurpose::EditTodo(todo.id),
-                        }));
-                    }
+                if self.focus == FocusPane::Todos
+                    && let Some(todo) = self.selected_todo()
+                {
+                    self.modal = Some(Modal::Input(SingleInputModal {
+                        title: "Edit todo".to_string(),
+                        prompt: "Todo".to_string(),
+                        value: todo.title.clone(),
+                        purpose: InputPurpose::EditTodo(todo.id),
+                    }));
                 }
             }
             KeyCode::Char(' ') => {
-                if self.focus == FocusPane::Todos {
-                    if let Some(todo_id) = self.selected_todo().map(|todo| todo.id) {
-                        if let Err(err) = self.repo.toggle_todo(todo_id) {
-                            self.status = format!("Failed to toggle todo: {err}");
-                        } else if let Err(err) = self.reload_todos_preserve(todo_id) {
-                            self.status = format!("Failed to refresh todos: {err}");
-                        } else {
-                            self.status = "Toggled todo".to_string();
-                        }
+                if self.focus == FocusPane::Todos
+                    && let Some(todo_id) = self.selected_todo().map(|todo| todo.id)
+                {
+                    if let Err(err) = self.repo.toggle_todo(todo_id) {
+                        self.status = format!("Failed to toggle todo: {err}");
+                    } else if let Err(err) = self.reload_todos_preserve(todo_id) {
+                        self.status = format!("Failed to refresh todos: {err}");
+                    } else {
+                        self.status = "Toggled todo".to_string();
                     }
                 }
             }
