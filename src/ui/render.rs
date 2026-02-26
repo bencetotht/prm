@@ -174,7 +174,7 @@ fn render_footer(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
         format!("Filter: {}", app.filter_input)
     } else {
         format!(
-            "{} | 1-4 panes | arrows/hjkl move | Tab panes | mouse click/scroll | f fetch | g lazygit | a/r/x/d project | n/e/space/dd todo | ? help | Q quit",
+            "{} | arrows/hjkl move | Tab panes | f fetch | g lazygit | a/r/x/d project | n/e/space/dd todo | ? help | Q quit",
             app.status
         )
     };
