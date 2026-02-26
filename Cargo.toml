@@ -2,6 +2,23 @@
 name = "prm"
 version = "0.1.0"
 edition = "2024"
+rust-version = "1.85"
+description = "Terminal-first project repository manager."
+readme = "README.md"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/bencetotht/prm"
+homepage = "https://github.com/bencetotht/prm"
+keywords = ["cli", "tui", "ratatui", "productivity", "git"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "prm"
+path = "src/main.rs"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = true
 
 [dependencies]
 anyhow = "1.0"
