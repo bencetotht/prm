@@ -16,6 +16,7 @@ use crate::git::{GitHistory, GitProjectStatus, load_git_history, probe_project_s
 use crate::pathing::resolve_project_path;
 
 const GIT_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
+const DB_REFRESH_INTERVAL: Duration = Duration::from_secs(2);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FocusPane {
@@ -101,6 +102,8 @@ pub struct AppState {
     pub(crate) git_history_cache: HashMap<String, GitHistory>,
     pub(crate) pending_todo_delete: bool,
     last_git_refresh: Instant,
+    last_db_refresh: Instant,
+    last_external_db_version: Option<i64>,
     quit: bool,
 }
 
@@ -126,10 +129,13 @@ impl AppState {
             git_history_cache: HashMap::new(),
             pending_todo_delete: false,
             last_git_refresh: Instant::now() - GIT_REFRESH_INTERVAL,
+            last_db_refresh: Instant::now() - DB_REFRESH_INTERVAL,
+            last_external_db_version: None,
             quit: false,
         };
 
         app.reload_projects()?;
+        app.sync_external_db_version();
         Ok(app)
     }
 
@@ -191,6 +197,8 @@ impl AppState {
     }
 
     pub fn tick(&mut self) {
+        self.refresh_from_external_db_changes();
+
         if self.last_git_refresh.elapsed() < GIT_REFRESH_INTERVAL {
             return;
         }
@@ -256,6 +264,9 @@ impl AppState {
             }
             KeyCode::Char('?') => {
                 self.show_help = true;
+            }
+            KeyCode::Char('f') => {
+                self.fetch_now();
             }
             KeyCode::Char('A') => {
                 if let Err(err) = self.toggle_show_archived() {
@@ -545,6 +556,23 @@ impl AppState {
         Ok(())
     }
 
+    fn fetch_now(&mut self) {
+        self.agents_cache.clear();
+        self.git_history_cache.clear();
+
+        match self.reload_projects() {
+            Ok(()) => {
+                self.last_git_refresh = Instant::now();
+                self.last_db_refresh = Instant::now();
+                self.sync_external_db_version();
+                self.status = "Fetched latest database and git state".to_string();
+            }
+            Err(err) => {
+                self.status = format!("Fetch failed: {err}");
+            }
+        }
+    }
+
     fn toggle_show_archived(&mut self) -> Result<()> {
         self.show_archived = !self.show_archived;
         self.reload_projects()?;
@@ -818,6 +846,7 @@ impl AppState {
         self.refresh_selected_git_history(true);
         self.agents_scroll = 0;
         self.git_history_scroll = 0;
+        self.sync_external_db_version();
         Ok(())
     }
 
@@ -844,6 +873,39 @@ impl AppState {
             self.refresh_selected_git_history(false);
         }
         self.last_git_refresh = Instant::now();
+    }
+
+    fn refresh_from_external_db_changes(&mut self) {
+        if self.last_db_refresh.elapsed() < DB_REFRESH_INTERVAL {
+            return;
+        }
+        self.last_db_refresh = Instant::now();
+
+        let Ok(current_version) = self.repo.external_data_version() else {
+            return;
+        };
+
+        let Some(last_version) = self.last_external_db_version else {
+            self.last_external_db_version = Some(current_version);
+            return;
+        };
+
+        if current_version == last_version {
+            return;
+        }
+
+        self.last_external_db_version = Some(current_version);
+        if let Err(err) = self.reload_projects() {
+            self.status = format!("Failed to refresh changed database: {err}");
+        } else {
+            self.status = "Detected external database changes".to_string();
+        }
+    }
+
+    fn sync_external_db_version(&mut self) {
+        if let Ok(version) = self.repo.external_data_version() {
+            self.last_external_db_version = Some(version);
+        }
     }
 
     fn refresh_git_statuses(&mut self) {
@@ -927,6 +989,8 @@ fn pane_list_index(area: Rect, row: u16) -> Option<usize> {
 
 #[cfg(test)]
 mod tests {
+    use std::time::Instant;
+
     use crossterm::event::{
         KeyCode, KeyEvent, KeyModifiers, MouseButton, MouseEvent, MouseEventKind,
     };
@@ -934,7 +998,7 @@ mod tests {
 
     use crate::db::repo::Repository;
 
-    use super::{AppState, FocusPane, PaneAreas};
+    use super::{AppState, DB_REFRESH_INTERVAL, FocusPane, PaneAreas};
 
     fn test_state() -> AppState {
         let repo = Repository::open_in_memory().expect("repo");
@@ -1081,5 +1145,38 @@ mod tests {
 
         assert_eq!(state.todos[1].title, "three");
         assert_eq!(state.todos[2].title, "two");
+    }
+
+    #[test]
+    fn fetch_shortcut_refreshes_state() {
+        let mut state = test_state();
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('f')));
+        assert_eq!(state.status, "Fetched latest database and git state");
+    }
+
+    #[test]
+    fn tick_auto_refreshes_after_external_db_change() {
+        let temp = tempfile::tempdir().expect("db tempdir");
+        let db_path = temp.path().join("prm.db");
+
+        let writer = Repository::open(&db_path).expect("writer repo");
+        let first = tempfile::tempdir().expect("first project");
+        writer
+            .upsert_project(first.path(), Some("alpha"))
+            .expect("insert first project");
+
+        let reader = Repository::open(&db_path).expect("reader repo");
+        let mut state = AppState::new(reader).expect("app state");
+        assert_eq!(state.project_count(), 1);
+
+        let second = tempfile::tempdir().expect("second project");
+        writer
+            .upsert_project(second.path(), Some("beta"))
+            .expect("insert second project");
+
+        state.last_db_refresh = Instant::now() - DB_REFRESH_INTERVAL;
+        state.tick();
+
+        assert_eq!(state.project_count(), 2);
     }
 }

@@ -4,6 +4,7 @@ use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph, Wrap}
 use crate::app::state::{AddProjectField, AppState, FocusPane, Modal};
 use crate::fs::agents::AgentsContent;
 use crate::git::GitHistory;
+use crate::meta;
 use crate::ui::layout::{centered_rect, split_main, split_right_column};
 use crate::ui::theme;
 use crate::ui::widgets::pane_block;
@@ -145,7 +146,7 @@ fn render_footer(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
         format!("Filter: {}", app.filter_input)
     } else {
         format!(
-            "{} | 1-4 panes | arrows/hjkl move | Tab panes | mouse click/scroll | a/r/x/d project | n/e/space/dd todo | ? help | Q quit",
+            "{} | 1-4 panes | arrows/hjkl move | Tab panes | mouse click/scroll | f fetch | a/r/x/d project | n/e/space/dd todo | ? help | Q quit",
             app.status
         )
     };
@@ -158,31 +159,56 @@ fn render_footer(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
 }
 
 fn render_help_overlay(frame: &mut Frame<'_>) {
-    let area = centered_rect(70, 70, frame.area());
+    let area = centered_rect(86, 84, frame.area());
     frame.render_widget(Clear, area);
+
+    let metadata = format!(
+        "Version: {} | GitHub: {}",
+        meta::version(),
+        meta::GITHUB_URL
+    );
 
     let lines = vec![
         Line::styled("PRM Keymap", theme::header_style()),
         Line::from(""),
+        Line::styled("Navigation", theme::header_style()),
+        Line::from("1/2/3/4 jump to a pane by number"),
+        Line::from("Tab/Shift-Tab or Left/Right switch pane focus"),
+        Line::from("Up/Down or j/k move list selection or scroll focused text panes"),
+        Line::from("Mouse: left click focuses/selects; wheel scrolls the pane under cursor"),
+        Line::from(""),
+        Line::styled("Refresh", theme::header_style()),
+        Line::from("Database auto-refresh checks external changes every 2 seconds"),
+        Line::from("Git status/history auto-refresh runs every 60 seconds"),
+        Line::from("Press f to fetch immediately (database + git + pane caches)"),
+        Line::from(""),
         Line::styled("Global", theme::header_style()),
-        Line::from(
-            "1/2/3/4 focus pane, arrows or h/j/k/l move, Tab/Shift-Tab pane, mouse click/scroll, / filter, q close, Q quit, ? help",
-        ),
+        Line::from("/ filter projects by name/path (Enter apply, Esc cancel)"),
+        Line::from("? toggles this help dialog"),
+        Line::from("Q quits prm"),
         Line::from(""),
         Line::styled("Projects pane", theme::header_style()),
-        Line::from("a add, r rename, x archive/unarchive, d delete(confirm), A toggle archived"),
+        Line::from("a open add-project modal (path + optional name)"),
+        Line::from("r rename selected project"),
+        Line::from("x archive/unarchive selected project"),
+        Line::from("d delete selected project (confirmation modal)"),
+        Line::from("A toggle showing archived projects"),
         Line::from(
             "Git badge legend: CHG changed, PUSH waiting to push, COMMIT local-only, OK synced",
         ),
         Line::from(""),
         Line::styled("Todos pane", theme::header_style()),
-        Line::from("n new, e/Enter edit, Space toggle done, dd delete, J/K reorder"),
+        Line::from("n add todo, e/Enter edit todo, Space toggle done"),
+        Line::from("dd delete selected todo"),
+        Line::from("J/K reorder selected todo"),
         Line::from(""),
-        Line::styled("AGENTS pane", theme::header_style()),
-        Line::from("j/k scroll content"),
+        Line::styled("Text panes", theme::header_style()),
+        Line::from("[3] AGENTS.md and [4] Git history support keyboard + mouse scrolling"),
         Line::from(""),
-        Line::styled("Git history pane", theme::header_style()),
-        Line::from("Tab/4 to focus, arrows or j/k scroll commits"),
+        Line::styled("Build Info", theme::header_style()),
+        Line::from(metadata),
+        Line::from(meta::copyright_line()),
+        Line::from("Press Esc, q, or ? to close help"),
     ];
 
     let widget = Paragraph::new(lines)

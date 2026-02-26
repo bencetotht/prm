@@ -91,6 +91,12 @@ impl Repository {
         Ok(rows)
     }
 
+    pub fn external_data_version(&self) -> Result<i64> {
+        self.conn
+            .pragma_query_value(None, "data_version", |row| row.get(0))
+            .map_err(Into::into)
+    }
+
     pub fn get_project(&self, project_id: i64) -> Result<Option<Project>> {
         self.conn
             .query_row(
@@ -486,5 +492,27 @@ mod tests {
 
         let todos = repo.list_todos(project.id).expect("todos");
         assert!(todos.is_empty());
+    }
+
+    #[test]
+    fn external_data_version_changes_after_external_write() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let db_path = temp.path().join("prm.db");
+
+        let reader = Repository::open(&db_path).expect("reader");
+        let writer = Repository::open(&db_path).expect("writer");
+
+        let before = reader
+            .external_data_version()
+            .expect("reader data version before");
+        let project_path = tempfile::tempdir().expect("project path");
+        writer
+            .upsert_project(project_path.path(), Some("demo"))
+            .expect("external upsert");
+        let after = reader
+            .external_data_version()
+            .expect("reader data version after");
+
+        assert!(after > before);
     }
 }

@@ -4,6 +4,7 @@ pub mod db;
 pub mod domain;
 pub mod fs;
 pub mod git;
+pub mod meta;
 pub mod pathing;
 pub mod tui;
 pub mod ui;

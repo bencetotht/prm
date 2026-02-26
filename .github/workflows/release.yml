@@ -37,6 +37,8 @@ jobs:
         uses: Swatinem/rust-cache@v2
 
       - name: Build release binary
+        env:
+          PRM_RELEASE_TAG: ${{ github.ref_name }}
         run: cargo build --locked --release --target ${{ matrix.target }}
 
       - name: Archive release bundle
