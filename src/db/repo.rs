@@ -204,7 +204,7 @@ impl Repository {
             "SELECT id, project_id, title, done, sort_order, created_at, updated_at
              FROM todos
              WHERE project_id = ?1
-             ORDER BY sort_order ASC, id ASC",
+             ORDER BY done ASC, sort_order ASC, id ASC",
         )?;
 
         let rows = stmt
@@ -514,5 +514,31 @@ mod tests {
             .expect("reader data version after");
 
         assert!(after > before);
+    }
+
+    #[test]
+    fn list_todos_keeps_incomplete_above_complete() {
+        let repo = Repository::open_in_memory().expect("in-memory repo");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = repo
+            .upsert_project(temp.path(), Some("demo"))
+            .expect("insert project")
+            .project;
+
+        let first = repo
+            .create_todo(project.id, "first")
+            .expect("create first todo");
+        let second = repo
+            .create_todo(project.id, "second")
+            .expect("create second todo");
+
+        repo.toggle_todo(first.id).expect("complete first todo");
+
+        let todos = repo.list_todos(project.id).expect("list todos");
+        assert_eq!(todos.len(), 2);
+        assert_eq!(todos[0].id, second.id);
+        assert!(!todos[0].done);
+        assert_eq!(todos[1].id, first.id);
+        assert!(todos[1].done);
     }
 }
