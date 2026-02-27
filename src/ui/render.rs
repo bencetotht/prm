@@ -147,7 +147,10 @@ fn render_git_history(frame: &mut Frame<'_>, app: &mut AppState, area: Rect) {
     };
 
     let release_line = match app.current_git_release() {
-        GitRelease::Tagged { tag, commits_ahead } if commits_ahead == 0 => {
+        GitRelease::Tagged {
+            tag,
+            commits_ahead: 0,
+        } => {
             format!("Release: {tag} (HEAD at tag)")
         }
         GitRelease::Tagged { tag, commits_ahead } => {
