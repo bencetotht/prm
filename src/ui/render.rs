@@ -20,7 +20,7 @@ pub fn render(frame: &mut Frame<'_>, app: &mut AppState) {
     render_footer(frame, app, footer);
 
     if app.show_help {
-        render_help_overlay(frame);
+        render_help_overlay(frame, app);
     }
 
     if let Some(modal) = app.modal.clone() {
@@ -198,7 +198,7 @@ fn render_footer(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
-fn render_help_overlay(frame: &mut Frame<'_>) {
+fn render_help_overlay(frame: &mut Frame<'_>, app: &AppState) {
     let area = centered_rect(86, 84, frame.area());
     frame.render_widget(Clear, area);
 
@@ -253,7 +253,7 @@ fn render_help_overlay(frame: &mut Frame<'_>) {
         Line::styled("Build Info", theme::header_style()),
         Line::from(metadata),
         Line::from(meta::copyright_line()),
-        Line::from("Press Esc, q, or ? to close help"),
+        Line::from("Scroll: j/k, arrows, PgUp/PgDn, mouse wheel | Close: Esc, q, or ?"),
     ];
 
     let widget = Paragraph::new(lines)
@@ -264,7 +264,8 @@ fn render_help_overlay(frame: &mut Frame<'_>) {
                 .border_style(theme::focus_border_style()),
         )
         .style(theme::help_style())
-        .wrap(Wrap { trim: false });
+        .wrap(Wrap { trim: false })
+        .scroll((app.help_scroll, 0));
 
     frame.render_widget(widget, area);
 }

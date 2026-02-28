@@ -107,6 +107,7 @@ pub struct AppState {
     pub(crate) filter_mode: bool,
     pub(crate) filter_input: String,
     pub(crate) show_help: bool,
+    pub(crate) help_scroll: u16,
     pub(crate) status: String,
     pub(crate) modal: Option<Modal>,
     pub(crate) agents_scroll: u16,
@@ -136,6 +137,7 @@ impl AppState {
             filter_mode: false,
             filter_input: String::new(),
             show_help: false,
+            help_scroll: 0,
             status: String::from("Ready"),
             modal: None,
             agents_scroll: 0,
@@ -262,12 +264,7 @@ impl AppState {
         }
 
         if self.show_help {
-            if matches!(
-                key.code,
-                KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q')
-            ) {
-                self.show_help = false;
-            }
+            self.handle_help_key(key);
             return;
         }
 
@@ -313,6 +310,7 @@ impl AppState {
             }
             KeyCode::Char('?') => {
                 self.show_help = true;
+                self.help_scroll = 0;
             }
             KeyCode::Char('f') => {
                 self.fetch_now();
@@ -461,7 +459,20 @@ impl AppState {
     }
 
     pub fn handle_mouse_event(&mut self, mouse: MouseEvent, pane_areas: PaneAreas) {
-        if self.show_help || self.modal.is_some() || self.filter_mode {
+        if self.show_help {
+            match mouse.kind {
+                MouseEventKind::ScrollDown => {
+                    self.help_scroll = self.help_scroll.saturating_add(1);
+                }
+                MouseEventKind::ScrollUp => {
+                    self.help_scroll = self.help_scroll.saturating_sub(1);
+                }
+                _ => {}
+            }
+            return;
+        }
+
+        if self.modal.is_some() || self.filter_mode {
             return;
         }
 
@@ -562,6 +573,31 @@ impl AppState {
         }
 
         self.modal = Some(modal);
+    }
+
+    fn handle_help_key(&mut self, key: KeyEvent) {
+        match key.code {
+            KeyCode::Esc | KeyCode::Char('?') | KeyCode::Char('q') => {
+                self.show_help = false;
+                self.help_scroll = 0;
+            }
+            KeyCode::Char('j') | KeyCode::Down => {
+                self.help_scroll = self.help_scroll.saturating_add(1);
+            }
+            KeyCode::Char('k') | KeyCode::Up => {
+                self.help_scroll = self.help_scroll.saturating_sub(1);
+            }
+            KeyCode::PageDown => {
+                self.help_scroll = self.help_scroll.saturating_add(12);
+            }
+            KeyCode::PageUp => {
+                self.help_scroll = self.help_scroll.saturating_sub(12);
+            }
+            KeyCode::Home => {
+                self.help_scroll = 0;
+            }
+            _ => {}
+        }
     }
 
     fn handle_filter_key(&mut self, key: KeyEvent) {
@@ -1424,6 +1460,67 @@ mod tests {
         state.handle_key_event(KeyEvent::from(KeyCode::Char('g')));
 
         assert!(state.take_pending_external_command().is_none());
+    }
+
+    #[test]
+    fn help_overlay_scrolls_with_keyboard_and_resets_when_closed() {
+        let mut state = test_state();
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('?')));
+        assert!(state.show_help);
+        assert_eq!(state.help_scroll, 0);
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('j')));
+        state.handle_key_event(KeyEvent::from(KeyCode::Down));
+        assert_eq!(state.help_scroll, 2);
+
+        state.handle_key_event(KeyEvent::from(KeyCode::PageDown));
+        assert_eq!(state.help_scroll, 14);
+
+        state.handle_key_event(KeyEvent::from(KeyCode::PageUp));
+        assert_eq!(state.help_scroll, 2);
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Home));
+        assert_eq!(state.help_scroll, 0);
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Esc));
+        assert!(!state.show_help);
+        assert_eq!(state.help_scroll, 0);
+    }
+
+    #[test]
+    fn help_overlay_scrolls_with_mouse_wheel() {
+        let mut state = test_state();
+        state.show_help = true;
+
+        let panes = PaneAreas {
+            projects: Rect::new(0, 0, 20, 10),
+            todos: Rect::new(21, 0, 20, 10),
+            agents: Rect::new(42, 0, 20, 5),
+            git_history: Rect::new(42, 5, 20, 5),
+        };
+
+        state.handle_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::ScrollDown,
+                column: 0,
+                row: 0,
+                modifiers: KeyModifiers::empty(),
+            },
+            panes,
+        );
+        assert_eq!(state.help_scroll, 1);
+
+        state.handle_mouse_event(
+            MouseEvent {
+                kind: MouseEventKind::ScrollUp,
+                column: 0,
+                row: 0,
+                modifiers: KeyModifiers::empty(),
+            },
+            panes,
+        );
+        assert_eq!(state.help_scroll, 0);
     }
 
     #[test]
