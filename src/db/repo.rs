@@ -53,24 +53,24 @@ impl Repository {
 
         let query = match (show_archived, filter.is_some()) {
             (true, true) => {
-                "SELECT id, name, path, archived, created_at, updated_at
+                "SELECT id, name, path, archived, todo_source, created_at, updated_at
                  FROM projects
                  WHERE name LIKE ?1 OR path LIKE ?1
                  ORDER BY archived ASC, name COLLATE NOCASE ASC"
             }
             (false, true) => {
-                "SELECT id, name, path, archived, created_at, updated_at
+                "SELECT id, name, path, archived, todo_source, created_at, updated_at
                  FROM projects
                  WHERE archived = 0 AND (name LIKE ?1 OR path LIKE ?1)
                  ORDER BY name COLLATE NOCASE ASC"
             }
             (true, false) => {
-                "SELECT id, name, path, archived, created_at, updated_at
+                "SELECT id, name, path, archived, todo_source, created_at, updated_at
                  FROM projects
                  ORDER BY archived ASC, name COLLATE NOCASE ASC"
             }
             (false, false) => {
-                "SELECT id, name, path, archived, created_at, updated_at
+                "SELECT id, name, path, archived, todo_source, created_at, updated_at
                  FROM projects
                  WHERE archived = 0
                  ORDER BY name COLLATE NOCASE ASC"
@@ -100,7 +100,7 @@ impl Repository {
     pub fn get_project(&self, project_id: i64) -> Result<Option<Project>> {
         self.conn
             .query_row(
-                "SELECT id, name, path, archived, created_at, updated_at FROM projects WHERE id = ?1",
+                "SELECT id, name, path, archived, todo_source, created_at, updated_at FROM projects WHERE id = ?1",
                 [project_id],
                 Self::row_to_project,
             )
@@ -113,7 +113,7 @@ impl Repository {
         let existing: Option<Project> = self
             .conn
             .query_row(
-                "SELECT id, name, path, archived, created_at, updated_at FROM projects WHERE path = ?1",
+                "SELECT id, name, path, archived, todo_source, created_at, updated_at FROM projects WHERE path = ?1",
                 [path_str.clone()],
                 Self::row_to_project,
             )
@@ -362,14 +362,23 @@ impl Repository {
         Ok(())
     }
 
+    pub fn set_todo_source(&self, project_id: i64, source: &str) -> Result<()> {
+        self.conn.execute(
+            "UPDATE projects SET todo_source = ?1, updated_at = ?2 WHERE id = ?3",
+            params![source, now_ts(), project_id],
+        )?;
+        Ok(())
+    }
+
     fn row_to_project(row: &rusqlite::Row<'_>) -> rusqlite::Result<Project> {
         Ok(Project {
             id: row.get(0)?,
             name: row.get(1)?,
             path: row.get(2)?,
             archived: row.get::<_, i64>(3)? != 0,
-            created_at: row.get(4)?,
-            updated_at: row.get(5)?,
+            todo_source: row.get(4)?,
+            created_at: row.get(5)?,
+            updated_at: row.get(6)?,
         })
     }
 

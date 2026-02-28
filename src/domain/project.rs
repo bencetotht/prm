@@ -4,6 +4,7 @@ pub struct Project {
     pub name: String,
     pub path: String,
     pub archived: bool,
+    pub todo_source: String,
     pub created_at: String,
     pub updated_at: String,
 }

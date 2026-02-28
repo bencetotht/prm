@@ -31,5 +31,22 @@ pub fn run_migrations(conn: &Connection) -> Result<()> {
         "#,
     )?;
 
+    add_column_if_missing(conn, "projects", "todo_source", "TEXT NOT NULL DEFAULT 'db'")?;
+
+    Ok(())
+}
+
+fn add_column_if_missing(conn: &Connection, table: &str, column: &str, definition: &str) -> Result<()> {
+    let mut stmt = conn.prepare(&format!("PRAGMA table_info({table})"))?;
+    let columns: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    if !columns.iter().any(|col| col == column) {
+        conn.execute_batch(&format!(
+            "ALTER TABLE {table} ADD COLUMN {column} {definition};"
+        ))?;
+    }
+
     Ok(())
 }

@@ -87,7 +87,16 @@ fn project_release_suffix(release: GitRelease) -> String {
 }
 
 fn render_todos(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
-    let block = pane_block("[2] Todos", app.focus == FocusPane::Todos);
+    let is_markdown = app
+        .selected_project()
+        .map(|p| p.todo_source == "markdown")
+        .unwrap_or(false);
+    let title = if is_markdown {
+        "[2] Todos (TODO.md)"
+    } else {
+        "[2] Todos"
+    };
+    let block = pane_block(title, app.focus == FocusPane::Todos);
 
     if app.todos.is_empty() {
         let text = vec![Line::from("No todos"), Line::from("Press n to add one")];
@@ -226,6 +235,7 @@ fn render_help_overlay(frame: &mut Frame<'_>) {
         Line::from("x archive/unarchive selected project"),
         Line::from("d delete selected project (confirmation modal)"),
         Line::from("A toggle showing archived projects"),
+        Line::from("m toggle todo storage (database / TODO.md file)"),
         Line::from("Dim suffix in project rows shows the latest reachable git tag"),
         Line::from(
             "Git badge legend: CHG changed, PUSH waiting to push, COMMIT local-only, OK synced",

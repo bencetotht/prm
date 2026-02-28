@@ -371,6 +371,31 @@ impl AppState {
                     self.status = format!("Failed to archive project: {err}");
                 }
             }
+            KeyCode::Char('m') => {
+                if self.focus == FocusPane::Projects
+                    && let Some(project) = self.selected_project().cloned()
+                {
+                    let new_source = if project.todo_source == "markdown" {
+                        "db"
+                    } else {
+                        "markdown"
+                    };
+                    if let Err(err) = self.repo.set_todo_source(project.id, new_source) {
+                        self.status = format!("Failed to toggle todo storage: {err}");
+                    } else if let Err(err) = self.reload_projects() {
+                        self.status = format!("Toggled todo storage but reload failed: {err}");
+                    } else {
+                        self.status = format!(
+                            "Switched to {} todo storage",
+                            if new_source == "markdown" {
+                                "TODO.md"
+                            } else {
+                                "database"
+                            }
+                        );
+                    }
+                }
+            }
             KeyCode::Char('d') => {
                 self.handle_delete_key();
             }
@@ -400,11 +425,31 @@ impl AppState {
             }
             KeyCode::Char(' ') => {
                 if self.focus == FocusPane::Todos
-                    && let Some(todo_id) = self.selected_todo().map(|todo| todo.id)
+                    && let Some(todo) = self.selected_todo().cloned()
                 {
-                    if let Err(err) = self.repo.toggle_todo(todo_id) {
+                    let is_markdown = self
+                        .selected_project()
+                        .map(|p| p.todo_source == "markdown")
+                        .unwrap_or(false);
+
+                    if is_markdown {
+                        let project_path = self
+                            .selected_project()
+                            .map(|p| p.path.clone())
+                            .unwrap_or_default();
+                        if let Err(err) = crate::fs::markdown::toggle_todo(
+                            Path::new(&project_path),
+                            todo.id as usize,
+                        ) {
+                            self.status = format!("Failed to toggle todo: {err}");
+                        } else if let Err(err) = self.reload_todos_preserve(todo.id) {
+                            self.status = format!("Failed to refresh todos: {err}");
+                        } else {
+                            self.status = "Toggled todo".to_string();
+                        }
+                    } else if let Err(err) = self.repo.toggle_todo(todo.id) {
                         self.status = format!("Failed to toggle todo: {err}");
-                    } else if let Err(err) = self.reload_todos_preserve(todo_id) {
+                    } else if let Err(err) = self.reload_todos_preserve(todo.id) {
                         self.status = format!("Failed to refresh todos: {err}");
                     } else {
                         self.status = "Toggled todo".to_string();
@@ -554,14 +599,35 @@ impl AppState {
                 self.reload_projects()?;
                 self.status = "Renamed project".to_string();
             }
-            InputPurpose::AddTodo(project_id) => {
-                let todo = self.repo.create_todo(project_id, &modal.value)?;
-                self.reload_todos_preserve(todo.id)?;
+            InputPurpose::AddTodo(_project_id) => {
+                if let Some(project) = self.selected_project().cloned()
+                    && project.todo_source == "markdown"
+                {
+                    crate::fs::markdown::create_todo(Path::new(&project.path), &modal.value)?;
+                    self.load_todos_for_selected_project()?;
+                    if !self.todos.is_empty() {
+                        self.selected_todo = self.todos.len() - 1;
+                    }
+                } else {
+                    let todo = self.repo.create_todo(_project_id, &modal.value)?;
+                    self.reload_todos_preserve(todo.id)?;
+                }
                 self.status = "Added todo".to_string();
             }
             InputPurpose::EditTodo(todo_id) => {
-                self.repo.update_todo_title(todo_id, &modal.value)?;
-                self.reload_todos_preserve(todo_id)?;
+                if let Some(project) = self.selected_project().cloned()
+                    && project.todo_source == "markdown"
+                {
+                    crate::fs::markdown::update_todo_title(
+                        Path::new(&project.path),
+                        todo_id as usize,
+                        &modal.value,
+                    )?;
+                    self.reload_todos_preserve(todo_id)?;
+                } else {
+                    self.repo.update_todo_title(todo_id, &modal.value)?;
+                    self.reload_todos_preserve(todo_id)?;
+                }
                 self.status = "Updated todo".to_string();
             }
         }
@@ -602,7 +668,13 @@ impl AppState {
                 self.status = "Deleted project".to_string();
             }
             ConfirmAction::DeleteTodo(todo_id) => {
-                self.repo.delete_todo(todo_id)?;
+                if let Some(project) = self.selected_project().cloned()
+                    && project.todo_source == "markdown"
+                {
+                    crate::fs::markdown::delete_todo(Path::new(&project.path), todo_id as usize)?;
+                } else {
+                    self.repo.delete_todo(todo_id)?;
+                }
                 self.load_todos_for_selected_project()?;
                 self.status = "Deleted todo".to_string();
             }
@@ -693,9 +765,27 @@ impl AppState {
                 }
             }
             FocusPane::Todos => {
-                if let Some(todo_id) = self.selected_todo().map(|todo| todo.id) {
+                if let Some(todo) = self.selected_todo().cloned() {
                     if self.pending_todo_delete {
-                        match self.repo.delete_todo(todo_id) {
+                        let is_markdown = self
+                            .selected_project()
+                            .map(|p| p.todo_source == "markdown")
+                            .unwrap_or(false);
+
+                        let delete_result = if is_markdown {
+                            let project_path = self
+                                .selected_project()
+                                .map(|p| p.path.clone())
+                                .unwrap_or_default();
+                            crate::fs::markdown::delete_todo(
+                                Path::new(&project_path),
+                                todo.id as usize,
+                            )
+                        } else {
+                            self.repo.delete_todo(todo.id)
+                        };
+
+                        match delete_result {
                             Ok(_) => {
                                 if let Err(err) = self.load_todos_for_selected_project() {
                                     self.status = format!("Deleted todo but refresh failed: {err}");
@@ -846,23 +936,61 @@ impl AppState {
     }
 
     fn move_selected_todo(&mut self, direction: MoveDirection) {
-        let Some(todo_id) = self.selected_todo().map(|todo| todo.id) else {
+        let Some(todo) = self.selected_todo().cloned() else {
             return;
         };
 
-        match self.repo.move_todo(todo_id, direction) {
-            Ok(true) => {
-                if let Err(err) = self.reload_todos_preserve(todo_id) {
-                    self.status = format!("Moved todo but failed to refresh: {err}");
-                } else {
-                    self.status = "Reordered todo".to_string();
+        let is_markdown = self
+            .selected_project()
+            .map(|p| p.todo_source == "markdown")
+            .unwrap_or(false);
+
+        if is_markdown {
+            let project_path = self
+                .selected_project()
+                .map(|p| p.path.clone())
+                .unwrap_or_default();
+            let current_visual_index = self.selected_todo;
+            match crate::fs::markdown::move_todo(
+                Path::new(&project_path),
+                todo.id as usize,
+                direction,
+            ) {
+                Ok(true) => {
+                    if let Err(err) = self.load_todos_for_selected_project() {
+                        self.status = format!("Moved todo but failed to refresh: {err}");
+                    } else {
+                        self.selected_todo = match direction {
+                            MoveDirection::Up => current_visual_index.saturating_sub(1),
+                            MoveDirection::Down => {
+                                (current_visual_index + 1).min(self.todos.len().saturating_sub(1))
+                            }
+                        };
+                        self.status = "Reordered todo".to_string();
+                    }
+                }
+                Ok(false) => {
+                    self.status = "Todo already at boundary".to_string();
+                }
+                Err(err) => {
+                    self.status = format!("Failed to reorder todo: {err}");
                 }
             }
-            Ok(false) => {
-                self.status = "Todo already at boundary".to_string();
-            }
-            Err(err) => {
-                self.status = format!("Failed to reorder todo: {err}");
+        } else {
+            match self.repo.move_todo(todo.id, direction) {
+                Ok(true) => {
+                    if let Err(err) = self.reload_todos_preserve(todo.id) {
+                        self.status = format!("Moved todo but failed to refresh: {err}");
+                    } else {
+                        self.status = "Reordered todo".to_string();
+                    }
+                }
+                Ok(false) => {
+                    self.status = "Todo already at boundary".to_string();
+                }
+                Err(err) => {
+                    self.status = format!("Failed to reorder todo: {err}");
+                }
             }
         }
     }
@@ -873,13 +1001,18 @@ impl AppState {
 
     fn load_todos_for_selected_project(&mut self) -> Result<()> {
         self.pending_todo_delete = false;
-        let Some(project_id) = self.selected_project_id() else {
+        let Some(project) = self.selected_project().cloned() else {
             self.todos.clear();
             self.selected_todo = 0;
             return Ok(());
         };
 
-        self.todos = self.repo.list_todos(project_id)?;
+        self.todos = if project.todo_source == "markdown" {
+            crate::fs::markdown::list_todos(Path::new(&project.path), project.id)?
+        } else {
+            self.repo.list_todos(project.id)?
+        };
+
         if self.todos.is_empty() {
             self.selected_todo = 0;
         } else {
