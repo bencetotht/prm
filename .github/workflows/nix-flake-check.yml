@@ -11,16 +11,8 @@ permissions:
 
 jobs:
   flake-check:
-    name: Flake Check (${{ matrix.system }})
-    runs-on: ${{ matrix.os }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - os: ubuntu-latest
-            system: x86_64-linux
-          # - os: macos-14
-          #   system: aarch64-darwin
+    name: Flake Check (x86_64-linux)
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
@@ -33,4 +25,4 @@ jobs:
         uses: DeterminateSystems/magic-nix-cache-action@v11
 
       - name: Run flake checks
-        run: nix flake check --system ${{ matrix.system }}
+        run: nix flake check --system x86_64-linux
