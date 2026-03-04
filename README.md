@@ -132,6 +132,8 @@ Theme note:
 - `prm` does not query or switch terminal themes directly.
 - Instead, it follows the terminal's active ANSI palette and default foreground/background, which is the most portable way for a TUI to track your current color scheme.
 - This means a Vim/Neovim colorscheme only affects `prm` indirectly when your terminal palette matches that broader theme setup.
+- If your terminal renders colors poorly, set `PRM_THEME=mono` to force monochrome attributes.
+- `NO_COLOR=1` or `CLICOLOR=0` also force monochrome mode; `PRM_THEME=color` overrides that.
 
 ### tmux Notes
 
