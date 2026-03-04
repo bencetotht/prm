@@ -11,7 +11,7 @@ pub fn pane_block(title: &str, focused: bool) -> Block<'_> {
 
     Block::default()
         .title(title)
-        .title_style(theme::header_style())
+        .title_style(theme::pane_title_style(focused))
         .borders(Borders::ALL)
         .border_style(border_style)
 }

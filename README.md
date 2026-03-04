@@ -114,10 +114,24 @@ nix flake check
 - External tool shortcuts:
   - `g` opens `lazygit` for selected project
   - `t` opens a new terminal context for selected project via tmux window
+- Terminal-adaptive UI theming:
+  - `prm` avoids hard-coded background colors and leans on your terminal's default foreground/background
+  - Selection and focus are primarily expressed with `reverse`, `bold`, `dim`, and underline attributes
+  - Git badges still use the standard ANSI palette so they inherit your terminal theme's color definitions
 - Auto-refresh behavior:
   - Git status/history refresh every 60 seconds
   - Database external-change detection every 2 seconds
   - Manual full refresh with `f`
+
+### Terminal Compatibility
+
+The main TUI is built on `crossterm` + `ratatui`, so it is not tied to Ghostty. It should behave the same in Kitty, Ghostty, WezTerm, Alacritty, and other terminals with normal alternate-screen, mouse, and ANSI support.
+
+Theme note:
+
+- `prm` does not query or switch terminal themes directly.
+- Instead, it follows the terminal's active ANSI palette and default foreground/background, which is the most portable way for a TUI to track your current color scheme.
+- This means a Vim/Neovim colorscheme only affects `prm` indirectly when your terminal palette matches that broader theme setup.
 
 ### tmux Notes
 
