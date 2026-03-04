@@ -8,6 +8,8 @@ It helps you keep a local index of repositories, manage project TODOs, inspect r
 - Rust `1.88.0` (if using cargo directly)
 - `git` (used for git status/history/release metadata)
 - Optional: `lazygit` (for the `g` shortcut)
+- Optional: `gh` (for GitHub pipeline status badges)
+- Optional: `glab` (for GitLab pipeline status badges)
 - Optional: `tmux` (for popup/window integrations)
 - Optional: `nix` with flakes enabled
 
@@ -96,6 +98,7 @@ nix flake check
   - Rename, archive/unarchive, delete, and filter projects
 - Git-aware project list:
   - Per-project git badges (`CHG`, `PUSH`, `COMMIT`, `OK`, `BEHIND`, `DIVERGED`, etc.)
+  - Per-project pipeline badge (`✓` success, `x` failed, `~` running, `?` unknown) when enabled
   - Latest reachable tag shown in the project row
 - Todo management:
   - Per-project TODO list with add/edit/toggle/reorder/delete
@@ -113,6 +116,7 @@ nix flake check
   - Shows recent commits and release distance from nearest tag
 - External tool shortcuts:
   - `g` opens `lazygit` for selected project
+  - `o` opens the selected project's git remote in your browser
   - `t` opens a new terminal context for selected project via tmux window
 - Terminal-adaptive UI theming:
   - `prm` avoids hard-coded background colors and leans on your terminal's default foreground/background
@@ -154,6 +158,7 @@ Global:
 | `/` | Open project filter input |
 | `f` | Fetch now (refresh DB + git + pane caches) |
 | `g` | Open `lazygit` for selected project |
+| `o` | Open selected project's remote repository in browser |
 | `t` | Open tmux terminal window for selected project |
 | `Tab` / `Shift+Tab` | Cycle pane focus forward/backward |
 | `h` / `l` | Cycle pane focus left/right |
@@ -217,6 +222,23 @@ Modal dialogs:
 
 ```bash
 export PRM_DB_PATH=/custom/path/prm.db
+```
+
+- Settings file location:
+  - `$XDG_CONFIG_HOME/prm/settings.toml`
+  - If `XDG_CONFIG_HOME` is not set: `~/.config/prm/settings.toml`
+  - `prm` creates this file automatically on startup if it does not exist.
+
+### Configuration Reference
+
+| Key | Type | Default | Description |
+| --- | --- | --- | --- |
+| `git_pipeline_check` | boolean | `true` | When `true`, query GitHub/GitLab pipeline status and show pipeline badges in the Projects pane. When `false`, skip pipeline queries and hide pipeline badges. |
+
+Example:
+
+```toml
+git_pipeline_check = false
 ```
 
 ## Contributing

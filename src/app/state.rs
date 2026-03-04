@@ -13,10 +13,11 @@ use crate::domain::project::Project;
 use crate::domain::todo::Todo;
 use crate::fs::agents::{AgentsContent, load_agents_markdown};
 use crate::git::{
-    GitHistory, GitProjectStatus, GitRelease, load_git_history, load_git_release,
-    probe_project_status,
+    GitHistory, GitPipelineStatus, GitProjectStatus, GitRelease, load_git_history,
+    load_git_release, probe_project_pipeline_status, probe_project_status,
 };
 use crate::pathing::resolve_project_path;
+use crate::settings::Settings;
 
 const GIT_REFRESH_INTERVAL: Duration = Duration::from_secs(60);
 const DB_REFRESH_INTERVAL: Duration = Duration::from_secs(2);
@@ -90,6 +91,9 @@ pub enum ExternalCommand {
     OpenLazyGit {
         project_path: String,
     },
+    OpenRepoInBrowser {
+        project_path: String,
+    },
     OpenTmuxTerminal {
         project_path: String,
         project_name: String,
@@ -98,6 +102,7 @@ pub enum ExternalCommand {
 
 pub struct AppState {
     pub(crate) repo: Repository,
+    settings: Settings,
     pub(crate) projects: Vec<Project>,
     pub(crate) selected_project: usize,
     pub(crate) todos: Vec<Todo>,
@@ -114,6 +119,7 @@ pub struct AppState {
     pub(crate) git_history_scroll: u16,
     pub(crate) agents_cache: HashMap<String, AgentsContent>,
     pub(crate) git_status_cache: HashMap<String, GitProjectStatus>,
+    pub(crate) git_pipeline_cache: HashMap<String, GitPipelineStatus>,
     pub(crate) git_history_cache: HashMap<String, GitHistory>,
     pub(crate) git_release_cache: HashMap<String, GitRelease>,
     pub(crate) pending_external_command: Option<ExternalCommand>,
@@ -125,9 +131,10 @@ pub struct AppState {
 }
 
 impl AppState {
-    pub fn new(repo: Repository) -> Result<Self> {
+    pub fn new(repo: Repository, settings: Settings) -> Result<Self> {
         let mut app = Self {
             repo,
+            settings,
             projects: Vec::new(),
             selected_project: 0,
             todos: Vec::new(),
@@ -144,6 +151,7 @@ impl AppState {
             git_history_scroll: 0,
             agents_cache: HashMap::new(),
             git_status_cache: HashMap::new(),
+            git_pipeline_cache: HashMap::new(),
             git_history_cache: HashMap::new(),
             git_release_cache: HashMap::new(),
             pending_external_command: None,
@@ -215,6 +223,17 @@ impl AppState {
             .get(path)
             .cloned()
             .unwrap_or(GitRelease::NotGit)
+    }
+
+    pub fn project_pipeline_status(&self, path: &str) -> GitPipelineStatus {
+        self.git_pipeline_cache
+            .get(path)
+            .cloned()
+            .unwrap_or(GitPipelineStatus::NotGit)
+    }
+
+    pub fn pipeline_checks_enabled(&self) -> bool {
+        self.settings.git_pipeline_check
     }
 
     pub fn current_git_history(&mut self) -> GitHistory {
@@ -317,6 +336,9 @@ impl AppState {
             }
             KeyCode::Char('g') => {
                 self.queue_lazygit_launch();
+            }
+            KeyCode::Char('o') => {
+                self.queue_repo_browser_launch();
             }
             KeyCode::Char('t') => {
                 self.queue_terminal_launch();
@@ -747,6 +769,16 @@ impl AppState {
         self.status = "Opening lazygit...".to_string();
     }
 
+    fn queue_repo_browser_launch(&mut self) {
+        let Some(project_path) = self.selected_project().map(|project| project.path.clone()) else {
+            self.status = "No project selected".to_string();
+            return;
+        };
+
+        self.pending_external_command = Some(ExternalCommand::OpenRepoInBrowser { project_path });
+        self.status = "Opening repository in browser...".to_string();
+    }
+
     fn queue_terminal_launch(&mut self) {
         let Some(project) = self.selected_project().cloned() else {
             self.status = "No project selected".to_string();
@@ -1164,13 +1196,19 @@ impl AppState {
 
     fn refresh_git_statuses(&mut self) {
         let mut next_status = HashMap::with_capacity(self.projects.len());
+        let mut next_pipeline = HashMap::with_capacity(self.projects.len());
         let mut next_release = HashMap::with_capacity(self.projects.len());
+        let check_pipelines = self.settings.git_pipeline_check;
         for project in &self.projects {
             let path = Path::new(&project.path);
             next_status.insert(project.path.clone(), probe_project_status(path));
+            if check_pipelines {
+                next_pipeline.insert(project.path.clone(), probe_project_pipeline_status(path));
+            }
             next_release.insert(project.path.clone(), load_git_release(path));
         }
         self.git_status_cache = next_status;
+        self.git_pipeline_cache = next_pipeline;
         self.git_release_cache = next_release;
     }
 
@@ -1267,18 +1305,23 @@ mod tests {
     use ratatui::layout::Rect;
 
     use crate::db::repo::Repository;
+    use crate::settings::Settings;
 
     use super::{
         AddProjectField, AddProjectModal, AppState, DB_REFRESH_INTERVAL, ExternalCommand,
         FocusPane, Modal, PaneAreas,
     };
 
-    fn test_state() -> AppState {
+    fn test_state_with_settings(settings: Settings) -> AppState {
         let repo = Repository::open_in_memory().expect("repo");
         let project_dir = tempfile::tempdir().expect("project dir");
         repo.upsert_project(project_dir.path(), Some("demo"))
             .expect("insert project");
-        AppState::new(repo).expect("app state")
+        AppState::new(repo, settings).expect("app state")
+    }
+
+    fn test_state() -> AppState {
+        test_state_with_settings(Settings::default())
     }
 
     #[test]
@@ -1542,6 +1585,31 @@ mod tests {
     }
 
     #[test]
+    fn open_browser_shortcut_queues_external_command() {
+        let mut state = test_state();
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('o')));
+
+        assert_eq!(
+            state.take_pending_external_command(),
+            Some(ExternalCommand::OpenRepoInBrowser {
+                project_path: state.selected_project().expect("project").path.clone(),
+            })
+        );
+    }
+
+    #[test]
+    fn open_browser_shortcut_is_ignored_while_filtering() {
+        let mut state = test_state();
+        state.filter_mode = true;
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('o')));
+
+        assert!(state.take_pending_external_command().is_none());
+        assert_eq!(state.filter_input, "o");
+    }
+
+    #[test]
     fn terminal_shortcut_queues_external_command() {
         let mut state = test_state();
         let selected_project = state.selected_project().expect("project").clone();
@@ -1608,7 +1676,7 @@ mod tests {
             .expect("insert first project");
 
         let reader = Repository::open(&db_path).expect("reader repo");
-        let mut state = AppState::new(reader).expect("app state");
+        let mut state = AppState::new(reader, Settings::default()).expect("app state");
         assert_eq!(state.project_count(), 1);
 
         let second = tempfile::tempdir().expect("second project");
@@ -1620,5 +1688,16 @@ mod tests {
         state.tick();
 
         assert_eq!(state.project_count(), 2);
+    }
+
+    #[test]
+    fn settings_can_disable_pipeline_checks() {
+        let settings = Settings {
+            git_pipeline_check: false,
+        };
+        let state = test_state_with_settings(settings);
+
+        assert!(!state.pipeline_checks_enabled());
+        assert!(state.git_pipeline_cache.is_empty());
     }
 }

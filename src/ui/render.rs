@@ -54,7 +54,7 @@ fn render_projects(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             let marker = if project.archived { "[A]" } else { "   " };
             let git_status = app.project_git_status(&project.path);
             let release = app.project_git_release(&project.path);
-            ListItem::new(Line::from(vec![
+            let mut spans = vec![
                 Span::raw(format!("{marker} ")),
                 Span::styled(
                     format!("[{}]", git_status.short_label()),
@@ -62,7 +62,21 @@ fn render_projects(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                 ),
                 Span::raw(format!(" {}", project.name)),
                 Span::styled(project_release_suffix(release), theme::muted_style()),
-            ]))
+            ];
+
+            if app.pipeline_checks_enabled() {
+                let pipeline = app.project_pipeline_status(&project.path);
+                spans.insert(2, Span::raw(" "));
+                spans.insert(
+                    3,
+                    Span::styled(
+                        format!("[{}]", pipeline.indicator()),
+                        theme::pipeline_status_style(&pipeline),
+                    ),
+                );
+            }
+
+            ListItem::new(Line::from(spans))
         })
         .collect::<Vec<_>>();
 
@@ -186,7 +200,7 @@ fn render_footer(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
         format!("Filter: {}", app.filter_input)
     } else {
         format!(
-            "{} | arrows/hjkl move | Tab panes | f fetch | g lazygit | t terminal | a/r/x/d project | n/e/space/dd todo | ? help | Q quit",
+            "{} | arrows/hjkl move | Tab panes | f fetch | g lazygit | o open remote | t terminal | a/r/x/d project | n/e/space/dd todo | ? help | Q quit",
             app.status
         )
     };
@@ -219,12 +233,13 @@ fn render_help_overlay(frame: &mut Frame<'_>, app: &AppState) {
         Line::from(""),
         Line::styled("Refresh", theme::header_style()),
         Line::from("Database auto-refresh checks external changes every 2 seconds"),
-        Line::from("Git status/history auto-refresh runs every 60 seconds"),
+        Line::from("Git status/history/release/pipeline auto-refresh runs every 60 seconds"),
         Line::from("Press f to fetch immediately (database + git + pane caches)"),
         Line::from(""),
         Line::styled("Global", theme::header_style()),
         Line::from("/ filter projects by name/path (Enter apply, Esc cancel)"),
         Line::from("g opens lazygit for selected project (tmux popup when available)"),
+        Line::from("o opens selected project's remote repository in your browser"),
         Line::from("t opens a new tmux terminal window at selected project path"),
         Line::from("? toggles this help dialog"),
         Line::from("Q quits prm"),
@@ -240,6 +255,7 @@ fn render_help_overlay(frame: &mut Frame<'_>, app: &AppState) {
         Line::from(
             "Git badge legend: CHG changed, PUSH waiting to push, COMMIT local-only, OK synced",
         ),
+        Line::from("Pipeline badge legend (when enabled): ✓ success, x failed, ~ running"),
         Line::from(""),
         Line::styled("Todos pane", theme::header_style()),
         Line::from("n add todo, e/Enter edit todo, Space toggle done"),

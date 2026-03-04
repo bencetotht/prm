@@ -7,6 +7,7 @@ use crate::app::state::AppState;
 use crate::db;
 use crate::db::repo::{Repository, UpsertStatus};
 use crate::pathing::resolve_project_path;
+use crate::settings;
 use crate::tui;
 
 #[derive(Debug, Parser)]
@@ -28,6 +29,7 @@ enum Command {
 
 pub fn run() -> Result<()> {
     let cli = Cli::parse();
+    let settings = settings::load_or_create()?;
 
     let db_path = db::database_path()?;
     let repo = Repository::open(&db_path)?;
@@ -35,7 +37,7 @@ pub fn run() -> Result<()> {
     match cli.command {
         Some(Command::Add { path, name }) => add_project(&repo, path, name),
         None => {
-            let state = AppState::new(repo)?;
+            let state = AppState::new(repo, settings)?;
             tui::run_tui(state)
         }
     }

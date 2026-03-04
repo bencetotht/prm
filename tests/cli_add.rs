@@ -24,11 +24,13 @@ fn prm_add_is_idempotent() {
     let root = tempfile::tempdir().expect("tempdir");
     let project = tempfile::tempdir().expect("project dir");
     let db_path = root.path().join("prm.db");
+    let xdg_config_home = root.path().join("config");
 
     Command::new(assert_cmd::cargo::cargo_bin!("prm"))
         .arg("add")
         .arg(project.path())
         .env("PRM_DB_PATH", db_path.as_os_str())
+        .env("XDG_CONFIG_HOME", xdg_config_home.as_os_str())
         .assert()
         .success()
         .stdout(contains("added"));
@@ -37,6 +39,7 @@ fn prm_add_is_idempotent() {
         .arg("add")
         .arg(project.path())
         .env("PRM_DB_PATH", db_path.as_os_str())
+        .env("XDG_CONFIG_HOME", xdg_config_home.as_os_str())
         .assert()
         .success()
         .stdout(contains("already exists"));
@@ -49,11 +52,13 @@ fn prm_add_name_flag_updates_existing_project_name() {
     let root = tempfile::tempdir().expect("tempdir");
     let project = tempfile::tempdir().expect("project dir");
     let db_path = root.path().join("prm.db");
+    let xdg_config_home = root.path().join("config");
 
     Command::new(assert_cmd::cargo::cargo_bin!("prm"))
         .arg("add")
         .arg(project.path())
         .env("PRM_DB_PATH", db_path.as_os_str())
+        .env("XDG_CONFIG_HOME", xdg_config_home.as_os_str())
         .assert()
         .success();
 
@@ -63,6 +68,7 @@ fn prm_add_name_flag_updates_existing_project_name() {
         .arg("--name")
         .arg("Renamed")
         .env("PRM_DB_PATH", db_path.as_os_str())
+        .env("XDG_CONFIG_HOME", xdg_config_home.as_os_str())
         .assert()
         .success()
         .stdout(contains("updated"));
@@ -75,6 +81,7 @@ fn prm_add_name_flag_updates_existing_project_name() {
 fn prm_add_uses_git_root_from_subdirectory() {
     let root = tempfile::tempdir().expect("tempdir");
     let db_path = root.path().join("prm.db");
+    let xdg_config_home = root.path().join("config");
     let repo = tempfile::tempdir().expect("repo dir");
 
     let status = StdCommand::new("git")
@@ -91,6 +98,7 @@ fn prm_add_uses_git_root_from_subdirectory() {
         .arg("add")
         .arg(&nested)
         .env("PRM_DB_PATH", db_path.as_os_str())
+        .env("XDG_CONFIG_HOME", xdg_config_home.as_os_str())
         .assert()
         .success();
 

@@ -2,7 +2,7 @@ use std::sync::OnceLock;
 
 use ratatui::style::{Color, Modifier, Style};
 
-use crate::git::GitProjectStatus;
+use crate::git::{GitPipelineStatus, GitProjectStatus};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum ThemeMode {
@@ -172,6 +172,35 @@ pub fn git_status_style(status: &GitProjectStatus) -> Style {
             GitProjectStatus::NoCommits => Style::default().add_modifier(Modifier::DIM),
             GitProjectStatus::NotGit => Style::default().add_modifier(Modifier::DIM),
             GitProjectStatus::Error(_) => {
+                Style::default().add_modifier(Modifier::BOLD | Modifier::REVERSED)
+            }
+        },
+    }
+}
+
+pub fn pipeline_status_style(status: &GitPipelineStatus) -> Style {
+    match theme_mode() {
+        ThemeMode::Color => match status {
+            GitPipelineStatus::Passing => Style::default().fg(Color::Green),
+            GitPipelineStatus::Failing => Style::default().fg(Color::Red),
+            GitPipelineStatus::Running => Style::default().fg(Color::Yellow),
+            GitPipelineStatus::Unknown => Style::default().fg(Color::Gray),
+            GitPipelineStatus::NotConfigured => Style::default().fg(Color::Blue),
+            GitPipelineStatus::NotSupported => Style::default().fg(Color::Gray),
+            GitPipelineStatus::NotGit => Style::default().fg(Color::Gray),
+            GitPipelineStatus::Error(_) => {
+                Style::default().fg(Color::Red).add_modifier(Modifier::BOLD)
+            }
+        },
+        ThemeMode::Monochrome => match status {
+            GitPipelineStatus::Passing => Style::default(),
+            GitPipelineStatus::Failing => Style::default().add_modifier(Modifier::REVERSED),
+            GitPipelineStatus::Running => Style::default().add_modifier(Modifier::BOLD),
+            GitPipelineStatus::Unknown => Style::default().add_modifier(Modifier::DIM),
+            GitPipelineStatus::NotConfigured => Style::default().add_modifier(Modifier::DIM),
+            GitPipelineStatus::NotSupported => Style::default().add_modifier(Modifier::DIM),
+            GitPipelineStatus::NotGit => Style::default().add_modifier(Modifier::DIM),
+            GitPipelineStatus::Error(_) => {
                 Style::default().add_modifier(Modifier::BOLD | Modifier::REVERSED)
             }
         },

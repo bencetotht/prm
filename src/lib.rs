@@ -6,5 +6,6 @@ pub mod fs;
 pub mod git;
 pub mod meta;
 pub mod pathing;
+pub mod settings;
 pub mod tui;
 pub mod ui;

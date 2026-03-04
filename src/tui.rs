@@ -13,6 +13,7 @@ use ratatui::Terminal;
 use ratatui::backend::CrosstermBackend;
 
 use crate::app::state::{AppState, ExternalCommand, PaneAreas};
+use crate::git::GitRemoteWebUrl;
 use crate::ui;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,6 +117,31 @@ fn handle_external_command(
                 }
             }
         }
+        ExternalCommand::OpenRepoInBrowser { project_path } => {
+            let path = Path::new(&project_path);
+            match crate::git::load_project_remote_web_url(path) {
+                GitRemoteWebUrl::Url(url) => match open_url_in_browser(&url) {
+                    Ok(()) => {
+                        app.status = format!("Opened repository in browser: {url}");
+                    }
+                    Err(err) => {
+                        app.status = format!("Failed to open repository in browser: {err}");
+                    }
+                },
+                GitRemoteWebUrl::NoRemote => {
+                    app.status = "Selected repository has no git remotes configured".to_string();
+                }
+                GitRemoteWebUrl::UnsupportedRemote(remote) => {
+                    app.status = format!("Could not derive browser URL from remote: {remote}");
+                }
+                GitRemoteWebUrl::NotGit => {
+                    app.status = "Selected project is not a git repository".to_string();
+                }
+                GitRemoteWebUrl::Error(err) => {
+                    app.status = format!("Failed to resolve git remote URL: {err}");
+                }
+            }
+        }
     }
 }
 
@@ -212,6 +238,35 @@ fn open_tmux_terminal_window(project_path: &Path, project_name: &str) -> Result<
             Err(anyhow!("`tmux new-window` exited with non-zero status"))
         } else {
             Err(anyhow!("`tmux new-window` failed: {stderr}"))
+        }
+    }
+}
+
+fn open_url_in_browser(url: &str) -> Result<()> {
+    let output = if cfg!(target_os = "macos") {
+        Command::new("open").arg(url).output()
+    } else if cfg!(target_os = "windows") {
+        Command::new("cmd").args(["/C", "start", "", url]).output()
+    } else {
+        Command::new("xdg-open").arg(url).output()
+    };
+
+    let output = output.map_err(|err| {
+        if err.kind() == io::ErrorKind::NotFound {
+            anyhow!("browser opener command not found in PATH")
+        } else {
+            anyhow!("failed to launch browser opener: {err}")
+        }
+    })?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.is_empty() {
+            Err(anyhow!("browser opener exited with non-zero status"))
+        } else {
+            Err(anyhow!("browser opener failed: {stderr}"))
         }
     }
 }
