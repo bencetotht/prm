@@ -233,7 +233,7 @@ fn render_help_overlay(frame: &mut Frame<'_>, app: &AppState) {
         Line::from(""),
         Line::styled("Refresh", theme::header_style()),
         Line::from("Database auto-refresh checks external changes every 2 seconds"),
-        Line::from("Git status/history/release/pipeline auto-refresh runs every 60 seconds"),
+        Line::from("Git status/history/release auto-refresh runs every 60 seconds"),
         Line::from("Press f to fetch immediately (database + git + pane caches)"),
         Line::from(""),
         Line::styled("Global", theme::header_style()),

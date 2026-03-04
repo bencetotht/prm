@@ -743,6 +743,8 @@ impl AppState {
 
     fn fetch_now(&mut self) {
         self.agents_cache.clear();
+        self.git_status_cache.clear();
+        self.git_pipeline_cache.clear();
         self.git_history_cache.clear();
         self.git_release_cache.clear();
 
@@ -923,6 +925,7 @@ impl AppState {
             self.status = format!("Failed to load todos: {err}");
         }
         self.refresh_selected_git_history(false);
+        self.refresh_selected_git_release(false);
         self.agents_scroll = 0;
         self.git_history_scroll = 0;
     }
@@ -1149,18 +1152,6 @@ impl AppState {
         self.git_history_scroll = 0;
     }
 
-    fn refresh_git_tracking(&mut self, include_history: bool) {
-        self.refresh_git_statuses();
-        if include_history {
-            self.refresh_selected_git_history(true);
-            self.refresh_selected_git_release(true);
-        } else {
-            self.refresh_selected_git_history(false);
-            self.refresh_selected_git_release(false);
-        }
-        self.last_git_refresh = Instant::now();
-    }
-
     fn refresh_from_external_db_changes(&mut self) {
         if self.last_db_refresh.elapsed() < DB_REFRESH_INTERVAL {
             return;
@@ -1192,6 +1183,18 @@ impl AppState {
         if let Ok(version) = self.repo.external_data_version() {
             self.last_external_db_version = Some(version);
         }
+    }
+
+    fn refresh_git_tracking(&mut self, include_history: bool) {
+        self.refresh_git_statuses();
+        if include_history {
+            self.refresh_selected_git_history(true);
+            self.refresh_selected_git_release(true);
+        } else {
+            self.refresh_selected_git_history(false);
+            self.refresh_selected_git_release(false);
+        }
+        self.last_git_refresh = Instant::now();
     }
 
     fn refresh_git_statuses(&mut self) {

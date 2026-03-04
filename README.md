@@ -123,7 +123,8 @@ nix flake check
   - Selection and focus are primarily expressed with `reverse`, `bold`, `dim`, and underline attributes
   - Git badges still use the standard ANSI palette so they inherit your terminal theme's color definitions
 - Auto-refresh behavior:
-  - Git status/history refresh every 60 seconds
+  - Git status/history/release refresh every 60 seconds
+  - Pipeline refresh every 60 seconds when `git_pipeline_check = true`
   - Database external-change detection every 2 seconds
   - Manual full refresh with `f`
 
