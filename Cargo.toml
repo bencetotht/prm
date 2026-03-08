@@ -1,6 +1,6 @@
 [package]
 name = "prm"
-version = "0.1.0"
+version = "1.0.2"
 edition = "2024"
 rust-version = "1.88"
 description = "Terminal-first project repository manager."
