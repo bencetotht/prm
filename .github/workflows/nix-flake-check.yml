@@ -1,4 +1,4 @@
-name: Nix Flake Check
+name: Nix Flake Check (Linux only)
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   flake-check:
-    name: Flake Check (x86_64-linux)
+    name: Flake Check (x86_64-linux, not a Brew release gate)
     runs-on: ubuntu-latest
 
     steps:

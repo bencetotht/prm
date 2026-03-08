@@ -6,11 +6,12 @@ use clap::{Parser, Subcommand};
 use crate::app::state::AppState;
 use crate::db;
 use crate::db::repo::{Repository, UpsertStatus};
+use crate::meta;
 use crate::pathing::resolve_project_path;
 use crate::tui;
 
 #[derive(Debug, Parser)]
-#[command(name = "prm", version, about = "Project Repo Manager")]
+#[command(name = "prm", version = meta::VERSION, about = "Project Repo Manager")]
 pub struct Cli {
     #[command(subcommand)]
     command: Option<Command>,

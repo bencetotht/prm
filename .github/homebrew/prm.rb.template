@@ -1,0 +1,33 @@
+class Prm < Formula
+  desc "Terminal-first project repository manager"
+  homepage "$homepage"
+  version "$version"
+  license any_of: ["MIT", "Apache-2.0"]
+
+  on_macos do
+    if Hardware::CPU.arm?
+      url "$darwin_arm64_url"
+      sha256 "$darwin_arm64_sha256"
+    else
+      url "$darwin_x86_64_url"
+      sha256 "$darwin_x86_64_sha256"
+    end
+  end
+
+  on_linux do
+    if Hardware::CPU.intel?
+      url "$linux_x86_64_url"
+      sha256 "$linux_x86_64_sha256"
+    else
+      odie "prm: unsupported Linux CPU architecture #{Hardware::CPU.arch}"
+    end
+  end
+
+  def install
+    bin.install Dir["**/prm"].fetch(0)
+  end
+
+  test do
+    assert_match version.to_s, shell_output("#{bin}/prm --version")
+  end
+end

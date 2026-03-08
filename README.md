@@ -45,6 +45,43 @@ Make sure to add the `~/.cargo/bin` to your PATH!
 export PATH="~/.cargo/bin:$PATH"
 ```
 
+## Install With Homebrew
+
+Install directly from the custom tap:
+
+```bash
+brew install bencetotht/prm/prm
+```
+
+Or add the tap first and then install:
+
+```bash
+brew tap bencetotht/prm
+brew install prm
+```
+
+## Install From GitHub Releases
+
+Download the asset that matches your platform from the GitHub Releases page.
+Current example:
+
+<!-- release-download-example:start -->
+```bash
+curl -fsSL https://github.com/bencetotht/prm/releases/download/v1.0.2/prm-v1.0.2-aarch64-apple-darwin.tar.gz -o prm.tar.gz
+tar -xzf prm.tar.gz
+install "./prm-1.0.2-aarch64-apple-darwin/prm" /usr/local/bin/prm
+```
+<!-- release-download-example:end -->
+
+Release artifacts:
+
+<!-- release-assets:start -->
+- `prm-v1.0.2-x86_64-unknown-linux-gnu.tar.gz`
+- `prm-v1.0.2-x86_64-apple-darwin.tar.gz`
+- `prm-v1.0.2-aarch64-apple-darwin.tar.gz`
+- `prm-v1.0.2-checksums.txt`
+<!-- release-assets:end -->
+
 ## Run With Nix
 
 Run directly from this repository:
@@ -231,9 +268,29 @@ export PRM_DB_PATH=/custom/path/prm.db
 
 ## Release Flow
 
-1. Create and push a semver tag like `v0.1.0`.
-2. GitHub Actions builds release binaries for Linux and macOS targets.
-3. Artifacts are attached to the GitHub Release.
+1. Keep the repo version in sync before tagging:
+
+   ```bash
+   python3 scripts/sync_version.py v1.2.3
+   python3 scripts/sync_version.py --check v1.2.3
+   cargo test --locked --all-targets
+   ```
+
+2. Optional rehearsal:
+
+   ```bash
+   gh workflow run release.yml -f version=v1.2.3
+   ```
+
+   The manual run builds artifacts, checksums, and a Homebrew formula preview without publishing.
+
+3. Create and push a semver tag like `v1.2.3`.
+4. GitHub Actions syncs versioned files back to `main`, builds release binaries for Linux and macOS, publishes the GitHub Release, and updates the `bencetotht/homebrew-prm` tap.
+5. Install notes in the GitHub Release include the Homebrew command, supported targets, and the combined checksum file.
+
+Maintainer note:
+- The tagged commit is allowed to remain pre-sync. Release automation is responsible for pushing the matching version-file update back to `main`.
+- `nix flake check` remains a Linux-only validation path. It is not the gate for the Homebrew release flow.
 
 ## License
 
