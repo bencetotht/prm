@@ -508,6 +508,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: aur-${{ matrix.pkgname }}
+          include-hidden-files: true
           path: |
             ${{ matrix.output_dir }}/PKGBUILD
             ${{ matrix.output_dir }}/.SRCINFO
@@ -567,8 +568,17 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cp "$(find aur-artifact -name PKGBUILD -print -quit)" aur-repo/PKGBUILD
-          cp "$(find aur-artifact -name .SRCINFO -print -quit)" aur-repo/.SRCINFO
+          pkgbuild_path="$(find aur-artifact -name PKGBUILD -print -quit)"
+          srcinfo_path="$(find aur-artifact -name .SRCINFO -print -quit)"
+
+          if [[ -z "${pkgbuild_path}" || -z "${srcinfo_path}" ]]; then
+            echo "Missing AUR metadata artifact contents" >&2
+            find aur-artifact -maxdepth 3 -type f | sort >&2
+            exit 1
+          fi
+
+          cp "${pkgbuild_path}" aur-repo/PKGBUILD
+          cp "${srcinfo_path}" aur-repo/.SRCINFO
 
       - name: Commit and push AUR update
         shell: bash
