@@ -1,4 +1,4 @@
-name: Nix Flake Check
+name: Nix Flake Check (Linux only) # Turns out mac is expensive
 
 on:
   push:
@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   flake-check:
-    name: Flake Check (x86_64-linux)
+    name: Flake Check (x86_64-linux, not a Brew release gate)
     runs-on: ubuntu-latest
 
     steps:
@@ -25,4 +25,4 @@ jobs:
         uses: DeterminateSystems/magic-nix-cache-action@v11
 
       - name: Run flake checks
-        run: nix flake check --system x86_64-linux
+        run: nix flake check --system x86_64-linux -L
