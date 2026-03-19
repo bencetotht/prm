@@ -15,6 +15,11 @@ on:
         required: false
         default: false
         type: boolean
+      publish_aur:
+        description: "Generate, validate, and publish AUR packages"
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: write
@@ -31,6 +36,7 @@ jobs:
       release_version: ${{ steps.vars.outputs.release_version }}
       release_tag: ${{ steps.vars.outputs.release_tag }}
       should_publish: ${{ steps.vars.outputs.should_publish }}
+      should_publish_aur: ${{ steps.vars.outputs.should_publish_aur }}
 
     steps:
       - name: Derive release version
@@ -46,9 +52,15 @@ jobs:
             else
               SHOULD_PUBLISH=false
             fi
+            if [[ "${{ inputs.publish_aur }}" == "true" ]]; then
+              SHOULD_PUBLISH_AUR=true
+            else
+              SHOULD_PUBLISH_AUR=false
+            fi
           else
             RAW_VERSION="${GITHUB_REF_NAME}"
             SHOULD_PUBLISH=true
+            SHOULD_PUBLISH_AUR=true
           fi
 
           if [[ "${RAW_VERSION}" =~ ^v?([0-9]+\.[0-9]+\.[0-9]+)$ ]]; then
@@ -63,6 +75,7 @@ jobs:
             echo "release_version=${RELEASE_VERSION}"
             echo "release_tag=${RELEASE_TAG}"
             echo "should_publish=${SHOULD_PUBLISH}"
+            echo "should_publish_aur=${SHOULD_PUBLISH_AUR}"
           } >> "${GITHUB_OUTPUT}"
 
   sync-version-files:
@@ -347,3 +360,173 @@ jobs:
           git add Formula/prm.rb
           git commit -m "prm ${{ needs.prepare.outputs.release_version }}"
           git push origin HEAD
+
+  build-aur-packages:
+    name: Build AUR Packages
+    needs:
+      - prepare
+      - sync-version-files
+      - publish-release
+    if: needs.prepare.outputs.should_publish == 'true' && needs.prepare.outputs.should_publish_aur == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pkgname: prman
+            variant: source
+            template: packaging/aur/PKGBUILD.in
+            output_dir: packaging/aur/out/source
+          - pkgname: prman-bin
+            variant: bin
+            template: packaging/aur/PKGBUILD-bin.in
+            output_dir: packaging/aur/out/bin
+    container:
+      image: archlinux:base-devel
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install bootstrap tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          pacman -Syu --noconfirm --needed python
+
+      - name: Render PKGBUILD
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/render_aur_pkgbuild.py \
+            --pkgname "${{ matrix.pkgname }}" \
+            --variant "${{ matrix.variant }}" \
+            --template "${{ matrix.template }}" \
+            --output "${{ matrix.output_dir }}/PKGBUILD"
+
+      - name: Install Arch packaging dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${GITHUB_WORKSPACE}/${{ matrix.output_dir }}"
+          source PKGBUILD
+          deps=(base-devel git namcap python sudo "${depends[@]-}" "${makedepends[@]-}" "${checkdepends[@]-}")
+          mapfile -t deps < <(printf '%s\n' "${deps[@]}" | awk 'NF && !seen[$0]++')
+          pacman -Syu --noconfirm --needed "${deps[@]}"
+
+      - name: Create builder user
+        shell: bash
+        run: |
+          set -euo pipefail
+          useradd --create-home --shell /bin/bash builder
+          printf 'builder ALL=(ALL) NOPASSWD: /usr/bin/pacman\n' > /etc/sudoers.d/builder-pacman
+          chmod 440 /etc/sudoers.d/builder-pacman
+          chown -R builder:builder "${GITHUB_WORKSPACE}"
+
+      - name: Generate checksums and .SRCINFO
+        shell: bash
+        run: |
+          set -euo pipefail
+          runuser -u builder -- env GITHUB_WORKSPACE="${GITHUB_WORKSPACE}" bash -lc '
+            cd "${GITHUB_WORKSPACE}/${{ matrix.output_dir }}"
+            updpkgsums
+            makepkg --printsrcinfo > .SRCINFO
+          '
+
+      - name: Lint PKGBUILD
+        shell: bash
+        run: |
+          set -euo pipefail
+          runuser -u builder -- env GITHUB_WORKSPACE="${GITHUB_WORKSPACE}" bash -lc '
+            cd "${GITHUB_WORKSPACE}/${{ matrix.output_dir }}"
+            namcap PKGBUILD .SRCINFO
+          '
+
+      - name: Build package
+        shell: bash
+        run: |
+          set -euo pipefail
+          runuser -u builder -- env GITHUB_WORKSPACE="${GITHUB_WORKSPACE}" bash -lc '
+            cd "${GITHUB_WORKSPACE}/${{ matrix.output_dir }}"
+            makepkg --syncdeps --cleanbuild --clean --noconfirm
+          '
+
+      - name: Upload AUR artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: aur-${{ matrix.pkgname }}
+          path: |
+            ${{ matrix.output_dir }}/PKGBUILD
+            ${{ matrix.output_dir }}/.SRCINFO
+            ${{ matrix.output_dir }}/*.pkg.tar.*
+
+  publish-aur-packages:
+    name: Publish AUR Packages
+    needs:
+      - prepare
+      - build-aur-packages
+    if: needs.prepare.outputs.should_publish == 'true' && needs.prepare.outputs.should_publish_aur == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - pkgname: prman
+            artifact_name: aur-prman
+          - pkgname: prman-bin
+            artifact_name: aur-prman-bin
+
+    steps:
+      - name: Verify AUR SSH secret
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "${{ secrets.AUR_SSH_PRIVATE_KEY }}" ]]; then
+            echo "AUR_SSH_PRIVATE_KEY is not configured" >&2
+            exit 1
+          fi
+
+      - name: Download AUR artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: aur-artifact
+
+      - name: Configure SSH for AUR
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          printf '%s\n' "${{ secrets.AUR_SSH_PRIVATE_KEY }}" > ~/.ssh/aur
+          chmod 600 ~/.ssh/aur
+          ssh-keyscan aur.archlinux.org >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Clone AUR repository
+        shell: bash
+        run: |
+          set -euo pipefail
+          GIT_SSH_COMMAND='ssh -i ~/.ssh/aur -o IdentitiesOnly=yes' \
+            git clone "ssh://aur@aur.archlinux.org/${{ matrix.pkgname }}.git" aur-repo
+
+      - name: Update AUR repository contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp "$(find aur-artifact -name PKGBUILD -print -quit)" aur-repo/PKGBUILD
+          cp "$(find aur-artifact -name .SRCINFO -print -quit)" aur-repo/.SRCINFO
+
+      - name: Commit and push AUR update
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd aur-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add PKGBUILD .SRCINFO
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "${{ matrix.pkgname }} ${{ needs.prepare.outputs.release_version }}"
+          GIT_SSH_COMMAND='ssh -i ~/.ssh/aur -o IdentitiesOnly=yes' git push origin HEAD
