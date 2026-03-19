@@ -218,7 +218,10 @@ fn render_aur_pkgbuilds_use_expected_package_names() {
     let bin_pkgbuild = fs::read_to_string(bin_output).expect("read bin PKGBUILD");
 
     assert!(source_pkgbuild.contains("pkgname='prman'"));
+    assert!(source_pkgbuild.contains("depends=('git' 'sqlite')"));
+    assert!(source_pkgbuild.contains("makedepends=('cargo' 'rust' 'pkgconf')"));
     assert!(source_pkgbuild.contains("conflicts=('prman-bin' 'prm')"));
+    assert!(source_pkgbuild.contains("export LIBSQLITE3_SYS_USE_PKG_CONFIG=1"));
     assert!(bin_pkgbuild.contains("pkgname='prman-bin'"));
     assert!(bin_pkgbuild.contains("provides=('prman')"));
     assert!(bin_pkgbuild.contains("conflicts=('prman' 'prm')"));
