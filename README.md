@@ -90,18 +90,18 @@ Current example:
 
 <!-- release-download-example:start -->
 ```bash
-curl -fsSL https://github.com/bencetotht/prm/releases/download/v1.0.4/prm-v1.0.4-aarch64-apple-darwin.tar.gz -o prm.tar.gz
+curl -fsSL https://github.com/bencetotht/prm/releases/download/v1.0.5/prm-v1.0.5-aarch64-apple-darwin.tar.gz -o prm.tar.gz
 tar -xzf prm.tar.gz
-install "./prm-1.0.4-aarch64-apple-darwin/prm" /usr/local/bin/prm
+install "./prm-1.0.5-aarch64-apple-darwin/prm" /usr/local/bin/prm
 ```
 <!-- release-download-example:end -->
 
 Release artifacts:
 
 <!-- release-assets:start -->
-- `prm-v1.0.4-x86_64-unknown-linux-gnu.tar.gz`
-- `prm-v1.0.4-aarch64-apple-darwin.tar.gz`
-- `prm-v1.0.4-checksums.txt`
+- `prm-v1.0.5-x86_64-unknown-linux-gnu.tar.gz`
+- `prm-v1.0.5-aarch64-apple-darwin.tar.gz`
+- `prm-v1.0.5-checksums.txt`
 <!-- release-assets:end -->
 
 ### Install via Nix flake
