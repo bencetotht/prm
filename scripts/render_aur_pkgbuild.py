@@ -8,6 +8,9 @@ import tomllib
 from string import Template
 
 
+AUR_DESCRIPTION = "Terminal project repository manager."
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Render the AUR PKGBUILD for a prm source release."
@@ -52,7 +55,7 @@ def main() -> int:
     version = package["version"]
     repo_url = package["repository"].rstrip("/")
     source_dir = repo_url.rsplit("/", 1)[-1]
-    pkgdesc = package["description"]
+    pkgdesc = AUR_DESCRIPTION
 
     if args.variant == "source":
         conflicts = [f"{args.pkgname}-bin"]
