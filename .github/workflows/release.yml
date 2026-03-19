@@ -86,6 +86,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       retagged: ${{ steps.sync.outputs.retagged }}
+      release_sha: ${{ steps.sync.outputs.release_sha }}
 
     steps:
       - name: Checkout release ref
@@ -113,12 +114,14 @@ jobs:
           if git diff --quiet -- Cargo.toml Cargo.lock README.md; then
             python3 scripts/sync_version.py --check "${RELEASE_TAG}"
             echo "retagged=false" >> "${GITHUB_OUTPUT}"
+            echo "release_sha=${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
 
           if [[ "${SHOULD_PUBLISH}" != "true" ]]; then
             python3 scripts/sync_version.py --check "${RELEASE_TAG}"
             echo "retagged=false" >> "${GITHUB_OUTPUT}"
+            echo "release_sha=${GITHUB_SHA}" >> "${GITHUB_OUTPUT}"
             exit 0
           fi
 
@@ -140,13 +143,13 @@ jobs:
           git push --force origin "refs/tags/${RELEASE_TAG}"
 
           echo "retagged=true" >> "${GITHUB_OUTPUT}"
+          echo "release_sha=$(git rev-parse HEAD)" >> "${GITHUB_OUTPUT}"
 
   build-artifacts:
     name: Build (${{ matrix.label }})
     needs:
       - prepare
       - sync-version-files
-    if: needs.sync-version-files.outputs.retagged != 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -162,6 +165,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.sync-version-files.outputs.release_sha }}
 
       - name: Set up Python
         if: github.event_name == 'workflow_dispatch' && needs.prepare.outputs.should_publish != 'true'
@@ -219,12 +224,13 @@ jobs:
       - prepare
       - sync-version-files
       - build-artifacts
-    if: needs.sync-version-files.outputs.retagged != 'true'
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.sync-version-files.outputs.release_sha }}
 
       - name: Set up Python
         uses: actions/setup-python@v5
@@ -327,7 +333,7 @@ jobs:
       - prepare
       - sync-version-files
       - assemble-release-metadata
-    if: needs.prepare.outputs.should_publish == 'true' && needs.sync-version-files.outputs.retagged != 'true'
+    if: needs.prepare.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -361,7 +367,7 @@ jobs:
       - sync-version-files
       - assemble-release-metadata
       - publish-release
-    if: needs.prepare.outputs.should_publish == 'true' && needs.sync-version-files.outputs.retagged != 'true'
+    if: needs.prepare.outputs.should_publish == 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -407,7 +413,7 @@ jobs:
       - prepare
       - sync-version-files
       - publish-release
-    if: needs.prepare.outputs.should_publish == 'true' && needs.prepare.outputs.should_publish_aur == 'true' && needs.sync-version-files.outputs.retagged != 'true'
+    if: needs.prepare.outputs.should_publish == 'true' && needs.prepare.outputs.should_publish_aur == 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -427,6 +433,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.sync-version-files.outputs.release_sha }}
 
       - name: Install bootstrap tools
         shell: bash
