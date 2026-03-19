@@ -3,6 +3,8 @@
 `prm` is a terminal-first project repository manager built with `ratatui`.
 It helps you keep a local index of repositories, manage project TODOs, inspect repo git state, and navigate repo workflows quickly.
 
+![AUR CI failure screenshot](docs/images/aur-ci-failure.webp)
+
 ## Usage
 
 ```bash
@@ -90,18 +92,18 @@ Current example:
 
 <!-- release-download-example:start -->
 ```bash
-curl -fsSL https://github.com/bencetotht/prm/releases/download/v1.0.6/prm-v1.0.6-macos-arm64.tar.gz -o prm.tar.gz
+curl -fsSL https://github.com/bencetotht/prm/releases/download/v1.0.7/prm-v1.0.7-aarch64-apple-darwin.tar.gz -o prm.tar.gz
 tar -xzf prm.tar.gz
-install "./prm-1.0.6-macos-arm64/prm" /usr/local/bin/prm
+install "./prm-1.0.7-aarch64-apple-darwin/prm" /usr/local/bin/prm
 ```
 <!-- release-download-example:end -->
 
 Release artifacts:
 
 <!-- release-assets:start -->
-- `prm-v1.0.6-linux-x86_64.tar.gz`
-- `prm-v1.0.6-macos-arm64.tar.gz`
-- `prm-v1.0.6-checksums.txt`
+- `prm-v1.0.7-x86_64-unknown-linux-gnu.tar.gz`
+- `prm-v1.0.7-aarch64-apple-darwin.tar.gz`
+- `prm-v1.0.7-checksums.txt`
 <!-- release-assets:end -->
 
 ### Install via Nix flake
