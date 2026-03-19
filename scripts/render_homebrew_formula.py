@@ -17,7 +17,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--template", type=pathlib.Path, required=True)
     parser.add_argument("--output", type=pathlib.Path, required=True)
     parser.add_argument("--linux-x86-64-sha256", required=True)
-    parser.add_argument("--darwin-x86-64-sha256", required=True)
     parser.add_argument("--darwin-arm64-sha256", required=True)
     return parser.parse_args()
 
@@ -41,13 +40,6 @@ def main() -> int:
             "x86_64-unknown-linux-gnu",
         ),
         linux_x86_64_sha256=args.linux_x86_64_sha256,
-        darwin_x86_64_url=release_url(
-            args.github_owner,
-            args.github_repo,
-            args.version,
-            "x86_64-apple-darwin",
-        ),
-        darwin_x86_64_sha256=args.darwin_x86_64_sha256,
         darwin_arm64_url=release_url(
             args.github_owner,
             args.github_repo,

@@ -100,7 +100,6 @@ Release artifacts:
 
 <!-- release-assets:start -->
 - `prm-v1.0.2-x86_64-unknown-linux-gnu.tar.gz`
-- `prm-v1.0.2-x86_64-apple-darwin.tar.gz`
 - `prm-v1.0.2-aarch64-apple-darwin.tar.gz`
 - `prm-v1.0.2-checksums.txt`
 <!-- release-assets:end -->
