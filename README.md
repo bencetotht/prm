@@ -3,6 +3,8 @@
 `prm` is a terminal-first project repository manager built with `ratatui`.
 It helps you keep a local index of repositories, manage project TODOs, inspect repo git state, and navigate repo workflows quickly.
 
+![AUR CI failure screenshot](docs/images/aur-ci-failure.webp)
+
 ## Usage
 
 ```bash
