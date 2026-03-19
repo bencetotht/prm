@@ -37,6 +37,7 @@ jobs:
       release_tag: ${{ steps.vars.outputs.release_tag }}
       should_publish: ${{ steps.vars.outputs.should_publish }}
       should_publish_aur: ${{ steps.vars.outputs.should_publish_aur }}
+      default_branch: ${{ steps.vars.outputs.default_branch }}
 
     steps:
       - name: Derive release version
@@ -76,12 +77,15 @@ jobs:
             echo "release_tag=${RELEASE_TAG}"
             echo "should_publish=${SHOULD_PUBLISH}"
             echo "should_publish_aur=${SHOULD_PUBLISH_AUR}"
+            echo "default_branch=${{ github.event.repository.default_branch }}"
           } >> "${GITHUB_OUTPUT}"
 
-  verify-version-files:
-    name: Verify version files
+  sync-version-files:
+    name: Sync version files
     needs: prepare
     runs-on: ubuntu-latest
+    outputs:
+      retagged: ${{ steps.sync.outputs.retagged }}
 
     steps:
       - name: Checkout release ref
@@ -94,18 +98,55 @@ jobs:
         with:
           python-version: "3.x"
 
-      - name: Sync version files for dry-run
-        if: github.event_name == 'workflow_dispatch' && needs.prepare.outputs.should_publish != 'true'
-        run: python3 scripts/sync_version.py ${{ needs.prepare.outputs.release_tag }}
+      - name: Sync or verify version files
+        id: sync
+        env:
+          DEFAULT_BRANCH: ${{ needs.prepare.outputs.default_branch }}
+          RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+          SHOULD_PUBLISH: ${{ needs.prepare.outputs.should_publish }}
+        shell: bash
+        run: |
+          set -euo pipefail
 
-      - name: Verify synced files
-        run: python3 scripts/sync_version.py --check ${{ needs.prepare.outputs.release_tag }}
+          python3 scripts/sync_version.py "${RELEASE_TAG}"
+
+          if git diff --quiet -- Cargo.toml Cargo.lock README.md; then
+            python3 scripts/sync_version.py --check "${RELEASE_TAG}"
+            echo "retagged=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          if [[ "${SHOULD_PUBLISH}" != "true" ]]; then
+            python3 scripts/sync_version.py --check "${RELEASE_TAG}"
+            echo "retagged=false" >> "${GITHUB_OUTPUT}"
+            exit 0
+          fi
+
+          git fetch origin "${DEFAULT_BRANCH}" --tags
+
+          if [[ "$(git rev-parse "origin/${DEFAULT_BRANCH}")" != "${GITHUB_SHA}" ]]; then
+            echo "Release tag must be created from the current ${DEFAULT_BRANCH} HEAD for automatic sync." >&2
+            echo "Tag SHA: ${GITHUB_SHA}" >&2
+            echo "Current ${DEFAULT_BRANCH} SHA: $(git rev-parse "origin/${DEFAULT_BRANCH}")" >&2
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock README.md
+          git commit -m "release: sync ${RELEASE_TAG}"
+          git tag -fa "${RELEASE_TAG}" -m "prm ${RELEASE_TAG}"
+          git push origin HEAD:"${DEFAULT_BRANCH}"
+          git push --force origin "refs/tags/${RELEASE_TAG}"
+
+          echo "retagged=true" >> "${GITHUB_OUTPUT}"
 
   build-artifacts:
     name: Build (${{ matrix.label }})
     needs:
       - prepare
-      - verify-version-files
+      - sync-version-files
+    if: needs.sync-version-files.outputs.retagged != 'true'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -176,7 +217,9 @@ jobs:
     name: Assemble release metadata
     needs:
       - prepare
+      - sync-version-files
       - build-artifacts
+    if: needs.sync-version-files.outputs.retagged != 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -282,9 +325,9 @@ jobs:
     name: Publish GitHub Release
     needs:
       - prepare
-      - verify-version-files
+      - sync-version-files
       - assemble-release-metadata
-    if: needs.prepare.outputs.should_publish == 'true'
+    if: needs.prepare.outputs.should_publish == 'true' && needs.sync-version-files.outputs.retagged != 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -315,10 +358,10 @@ jobs:
     name: Update Homebrew tap
     needs:
       - prepare
-      - verify-version-files
+      - sync-version-files
       - assemble-release-metadata
       - publish-release
-    if: needs.prepare.outputs.should_publish == 'true'
+    if: needs.prepare.outputs.should_publish == 'true' && needs.sync-version-files.outputs.retagged != 'true'
     runs-on: ubuntu-latest
 
     steps:
@@ -362,9 +405,9 @@ jobs:
     name: Build AUR Packages
     needs:
       - prepare
-      - verify-version-files
+      - sync-version-files
       - publish-release
-    if: needs.prepare.outputs.should_publish == 'true' && needs.prepare.outputs.should_publish_aur == 'true'
+    if: needs.prepare.outputs.should_publish == 'true' && needs.prepare.outputs.should_publish_aur == 'true' && needs.sync-version-files.outputs.retagged != 'true'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
