@@ -40,15 +40,15 @@ fn sample_readme() -> &'static str {
 
 <!-- release-download-example:start -->
 ```bash
-curl -fsSL https://github.com/bencetotht/prm/releases/download/v0.1.0/prm-v0.1.0-aarch64-apple-darwin.tar.gz -o prm.tar.gz
+curl -fsSL https://github.com/bencetotht/prm/releases/download/v0.1.0/prm-v0.1.0-macos-arm64.tar.gz -o prm.tar.gz
 tar -xzf prm.tar.gz
-install "./prm-0.1.0-aarch64-apple-darwin/prm" /usr/local/bin/prm
+install "./prm-0.1.0-macos-arm64/prm" /usr/local/bin/prm
 ```
 <!-- release-download-example:end -->
 
 <!-- release-assets:start -->
-- `prm-v0.1.0-x86_64-unknown-linux-gnu.tar.gz`
-- `prm-v0.1.0-aarch64-apple-darwin.tar.gz`
+- `prm-v0.1.0-linux-x86_64.tar.gz`
+- `prm-v0.1.0-macos-arm64.tar.gz`
 - `prm-v0.1.0-checksums.txt`
 <!-- release-assets:end -->
 "#
@@ -126,7 +126,8 @@ fn sync_version_updates_expected_files() {
 
     assert!(cargo_toml.contains("version = \"1.2.3\""));
     assert!(cargo_lock.contains("name = \"prm\"\nversion = \"1.2.3\""));
-    assert!(readme.contains("releases/download/v1.2.3/prm-v1.2.3-aarch64-apple-darwin.tar.gz"));
+    assert!(readme.contains("releases/download/v1.2.3/prm-v1.2.3-macos-arm64.tar.gz"));
+    assert!(readme.contains("prm-1.2.3-macos-arm64/prm"));
     assert!(readme.contains("prm-v1.2.3-checksums.txt"));
 }
 
@@ -178,10 +179,10 @@ fn render_homebrew_formula_includes_urls_and_checksums() {
     let formula = fs::read_to_string(output).expect("read formula");
     assert!(formula.contains("version \"1.2.3\""));
     assert!(formula.contains(
-        "https://github.com/bencetotht/prm/releases/download/v1.2.3/prm-v1.2.3-x86_64-unknown-linux-gnu.tar.gz"
+        "https://github.com/bencetotht/prm/releases/download/v1.2.3/prm-v1.2.3-linux-x86_64.tar.gz"
     ));
     assert!(formula.contains(
-        "https://github.com/bencetotht/prm/releases/download/v1.2.3/prm-v1.2.3-aarch64-apple-darwin.tar.gz"
+        "https://github.com/bencetotht/prm/releases/download/v1.2.3/prm-v1.2.3-macos-arm64.tar.gz"
     ));
     assert!(formula.contains("sha256 \"linuxsha\""));
     assert!(formula.contains("unsupported macOS CPU architecture"));
@@ -225,6 +226,10 @@ fn render_aur_pkgbuilds_use_expected_package_names() {
     assert!(bin_pkgbuild.contains("pkgname='prman-bin'"));
     assert!(bin_pkgbuild.contains("provides=('prman')"));
     assert!(bin_pkgbuild.contains("conflicts=('prman' 'prm')"));
+    assert!(bin_pkgbuild.contains("prm-v"));
+    assert!(bin_pkgbuild.contains("-linux-x86_64.tar.gz"));
+    assert!(bin_pkgbuild.contains("cd \"prm-"));
+    assert!(bin_pkgbuild.contains("-linux-x86_64\""));
 }
 
 #[test]

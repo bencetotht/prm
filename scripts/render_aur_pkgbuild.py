@@ -9,6 +9,7 @@ from string import Template
 
 
 AUR_DESCRIPTION = "Terminal project repository manager."
+LINUX_X86_64_ASSET = "linux-x86_64"
 
 
 def parse_args() -> argparse.Namespace:
@@ -73,9 +74,9 @@ def main() -> int:
         provides = [source_pkgname]
         source_url = (
             f"{repo_url}/releases/download/v{version}/"
-            f"{binary_name}-v{version}-x86_64-unknown-linux-gnu.tar.gz"
+            f"{binary_name}-v{version}-{LINUX_X86_64_ASSET}.tar.gz"
         )
-        source_dir = f"{binary_name}-{version}-x86_64-unknown-linux-gnu"
+        source_dir = f"{binary_name}-{version}-{LINUX_X86_64_ASSET}"
         pkgdesc = f"{pkgdesc} (prebuilt binary release)"
 
     conflicts_block = f"conflicts={shell_array(conflicts)}\n"

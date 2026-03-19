@@ -158,9 +158,11 @@ jobs:
           - os: ubuntu-latest
             label: linux x86_64
             target: x86_64-unknown-linux-gnu
+            asset_suffix: linux-x86_64
           - os: macos-14
             label: macOS arm64
             target: aarch64-apple-darwin
+            asset_suffix: macos-arm64
 
     steps:
       - name: Checkout
@@ -196,12 +198,13 @@ jobs:
           RELEASE_VERSION: ${{ needs.prepare.outputs.release_version }}
           RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
           TARGET: ${{ matrix.target }}
+          ASSET_SUFFIX: ${{ matrix.asset_suffix }}
         shell: bash
         run: |
           set -euo pipefail
           BIN="prm"
-          STAGING="dist/${BIN}-${RELEASE_VERSION}-${TARGET}"
-          ASSET="dist/${BIN}-${RELEASE_TAG}-${TARGET}.tar.gz"
+          STAGING="dist/${BIN}-${RELEASE_VERSION}-${ASSET_SUFFIX}"
+          ASSET="dist/${BIN}-${RELEASE_TAG}-${ASSET_SUFFIX}.tar.gz"
 
           mkdir -p "${STAGING}"
           cp "target/${TARGET}/release/${BIN}" "${STAGING}/"
@@ -256,12 +259,12 @@ jobs:
         run: |
           set -euo pipefail
 
-          linux_sha="$(awk '{print $1}' "dist/prm-${RELEASE_TAG}-x86_64-unknown-linux-gnu.tar.gz.sha256")"
-          darwin_arm64_sha="$(awk '{print $1}' "dist/prm-${RELEASE_TAG}-aarch64-apple-darwin.tar.gz.sha256")"
+          linux_sha="$(awk '{print $1}' "dist/prm-${RELEASE_TAG}-linux-x86_64.tar.gz.sha256")"
+          darwin_arm64_sha="$(awk '{print $1}' "dist/prm-${RELEASE_TAG}-macos-arm64.tar.gz.sha256")"
 
           cat \
-            "dist/prm-${RELEASE_TAG}-x86_64-unknown-linux-gnu.tar.gz.sha256" \
-            "dist/prm-${RELEASE_TAG}-aarch64-apple-darwin.tar.gz.sha256" \
+            "dist/prm-${RELEASE_TAG}-linux-x86_64.tar.gz.sha256" \
+            "dist/prm-${RELEASE_TAG}-macos-arm64.tar.gz.sha256" \
             > "dist/prm-${RELEASE_TAG}-checksums.txt"
 
           {
@@ -305,8 +308,8 @@ jobs:
 
           ## Supported targets
 
-          - x86_64-unknown-linux-gnu
-          - aarch64-apple-darwin
+          - Linux x86_64
+          - macOS arm64
 
           ## Checksums
 

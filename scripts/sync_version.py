@@ -13,10 +13,10 @@ README_DOWNLOAD_END = "<!-- release-download-example:end -->"
 README_ASSETS_START = "<!-- release-assets:start -->"
 README_ASSETS_END = "<!-- release-assets:end -->"
 
-TARGETS = [
-    "x86_64-unknown-linux-gnu",
-    "aarch64-apple-darwin",
-]
+LINUX_X86_64_ASSET = "linux-x86_64"
+MACOS_ARM64_ASSET = "macos-arm64"
+
+TARGETS = [LINUX_X86_64_ASSET, MACOS_ARM64_ASSET]
 
 
 def parse_args() -> argparse.Namespace:
@@ -110,9 +110,9 @@ def download_example(version: str) -> str:
     return "\n".join(
         [
             "```bash",
-            f"curl -fsSL https://github.com/bencetotht/prm/releases/download/v{version}/prm-v{version}-aarch64-apple-darwin.tar.gz -o prm.tar.gz",
+            f"curl -fsSL https://github.com/bencetotht/prm/releases/download/v{version}/prm-v{version}-{MACOS_ARM64_ASSET}.tar.gz -o prm.tar.gz",
             "tar -xzf prm.tar.gz",
-            f'install "./prm-{version}-aarch64-apple-darwin/prm" /usr/local/bin/prm',
+            f'install "./prm-{version}-{MACOS_ARM64_ASSET}/prm" /usr/local/bin/prm',
             "```",
         ]
     )

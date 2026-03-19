@@ -6,6 +6,9 @@ import argparse
 import pathlib
 from string import Template
 
+LINUX_X86_64_ASSET = "linux-x86_64"
+MACOS_ARM64_ASSET = "macos-arm64"
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
@@ -37,14 +40,14 @@ def main() -> int:
             args.github_owner,
             args.github_repo,
             args.version,
-            "x86_64-unknown-linux-gnu",
+            LINUX_X86_64_ASSET,
         ),
         linux_x86_64_sha256=args.linux_x86_64_sha256,
         darwin_arm64_url=release_url(
             args.github_owner,
             args.github_repo,
             args.version,
-            "aarch64-apple-darwin",
+            MACOS_ARM64_ASSET,
         ),
         darwin_arm64_sha256=args.darwin_arm64_sha256,
     )
