@@ -21,7 +21,7 @@ pub struct Cli {
 enum Command {
     Add {
         #[arg(default_value = ".")]
-        path: PathBuf,
+        path_list: Vec<PathBuf>,
         #[arg(long)]
         name: Option<String>,
     },
@@ -34,7 +34,7 @@ pub fn run() -> Result<()> {
     let repo = Repository::open(&db_path)?;
 
     match cli.command {
-        Some(Command::Add { path, name }) => add_project(&repo, path, name),
+        Some(Command::Add { path_list, name }) => add_project(&repo, path_list, name),
         None => {
             let state = AppState::new(repo)?;
             tui::run_tui(state)
@@ -42,22 +42,24 @@ pub fn run() -> Result<()> {
     }
 }
 
-fn add_project(repo: &Repository, path: PathBuf, name: Option<String>) -> Result<()> {
-    let resolved = resolve_project_path(&path)?;
-    let result = repo.upsert_project(&resolved, name.as_deref())?;
+fn add_project(repo: &Repository, path_list: Vec<PathBuf>, name: Option<String>) -> Result<()> {
+    for path in path_list {
+        let resolved = resolve_project_path(&path)?;
+        let result = repo.upsert_project(&resolved, name.as_deref())?;
 
-    match result.status {
-        UpsertStatus::Added => {
-            println!("added: {} ({})", result.project.name, result.project.path);
-        }
-        UpsertStatus::Updated => {
-            println!("updated: {} ({})", result.project.name, result.project.path);
-        }
-        UpsertStatus::Existing => {
-            println!(
-                "already exists: {} ({})",
-                result.project.name, result.project.path
-            );
+        match result.status {
+            UpsertStatus::Added => {
+                println!("added: {} ({})", result.project.name, result.project.path);
+            }
+            UpsertStatus::Updated => {
+                println!("updated: {} ({})", result.project.name, result.project.path);
+            }
+            UpsertStatus::Existing => {
+                println!(
+                    "already exists: {} ({})",
+                    result.project.name, result.project.path
+                );
+            }
         }
     }
 
