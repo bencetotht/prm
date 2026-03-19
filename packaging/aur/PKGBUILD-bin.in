@@ -1,0 +1,22 @@
+pkgname='${pkgname}'
+pkgver='${pkgver}'
+pkgrel=1
+pkgdesc='${pkgdesc}'
+arch=('x86_64')
+url='${url}'
+license=(${license_list})
+depends=('git')
+optdepends=(
+  'lazygit: open lazygit with the g shortcut'
+  'tmux: popup and terminal-window integrations'
+)
+${provides_block}${conflicts_block}source=("${pkgname}-${pkgver}-x86_64.tar.gz::${source_url}")
+sha256sums=('SKIP')
+
+package() {
+  cd "${source_dir}"
+  install -Dm755 "${binary_name}" "$${pkgdir}/usr/bin/${binary_name}"
+  install -Dm644 LICENSE-MIT "$${pkgdir}/usr/share/licenses/${pkgname}/LICENSE-MIT"
+  install -Dm644 LICENSE-APACHE "$${pkgdir}/usr/share/licenses/${pkgname}/LICENSE-APACHE"
+  install -Dm644 README.md "$${pkgdir}/usr/share/doc/${pkgname}/README.md"
+}

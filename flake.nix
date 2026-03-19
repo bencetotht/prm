@@ -34,7 +34,10 @@
           version = packageVersion;
           src = ./.;
 
-          nativeCheckInputs = [ pkgs.git ];
+          nativeCheckInputs = [
+            pkgs.git
+            pkgs.python3
+          ];
 
           cargoLock = {
             lockFile = ./Cargo.lock;

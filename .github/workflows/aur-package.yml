@@ -1,0 +1,201 @@
+name: AUR Packages
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      source_pkgname:
+        description: "Source AUR package name to render and validate"
+        required: false
+        default: "prman"
+        type: string
+      bin_pkgname:
+        description: "Binary AUR package name to render and validate"
+        required: false
+        default: "prman-bin"
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  render-source:
+    name: Render + Build Source (Arch)
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve package name
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PKGNAME="${{ github.event.inputs.source_pkgname }}"
+          if [[ -z "${PKGNAME}" ]]; then
+            PKGNAME="prman"
+          fi
+
+          echo "pkgname=${PKGNAME}" >> "${GITHUB_OUTPUT}"
+
+      - name: Render PKGBUILD
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/render_aur_pkgbuild.py \
+            --pkgname "${{ steps.meta.outputs.pkgname }}" \
+            --variant source \
+            --template packaging/aur/PKGBUILD.in \
+            --output packaging/aur/out/source/PKGBUILD
+
+      - name: Install Arch packaging dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${GITHUB_WORKSPACE}/packaging/aur/out/source"
+          source PKGBUILD
+          deps=(base-devel git namcap python sudo "${depends[@]-}" "${makedepends[@]-}" "${checkdepends[@]-}")
+          mapfile -t deps < <(printf '%s\n' "${deps[@]}" | awk 'NF && !seen[$0]++')
+          pacman -Syu --noconfirm --needed "${deps[@]}"
+
+      - name: Create builder user
+        shell: bash
+        run: |
+          set -euo pipefail
+          useradd --create-home --shell /bin/bash builder
+          printf 'builder ALL=(ALL) NOPASSWD: /usr/bin/pacman\n' > /etc/sudoers.d/builder-pacman
+          chmod 440 /etc/sudoers.d/builder-pacman
+          chown -R builder:builder "${GITHUB_WORKSPACE}"
+
+      - name: Generate checksums and .SRCINFO
+        shell: bash
+        run: |
+          set -euo pipefail
+          runuser -u builder -- env GITHUB_WORKSPACE="${GITHUB_WORKSPACE}" bash -lc '
+            cd "${GITHUB_WORKSPACE}/packaging/aur/out/source"
+            updpkgsums
+            makepkg --printsrcinfo > .SRCINFO
+          '
+
+      - name: Lint PKGBUILD
+        shell: bash
+        run: |
+          set -euo pipefail
+          runuser -u builder -- env GITHUB_WORKSPACE="${GITHUB_WORKSPACE}" bash -lc '
+            cd "${GITHUB_WORKSPACE}/packaging/aur/out/source"
+            namcap PKGBUILD .SRCINFO
+          '
+
+      - name: Build package
+        shell: bash
+        run: |
+          set -euo pipefail
+          runuser -u builder -- env GITHUB_WORKSPACE="${GITHUB_WORKSPACE}" bash -lc '
+            cd "${GITHUB_WORKSPACE}/packaging/aur/out/source"
+            makepkg --syncdeps --cleanbuild --clean --noconfirm
+          '
+
+      - name: Upload rendered AUR files
+        uses: actions/upload-artifact@v4
+        with:
+          name: aur-${{ steps.meta.outputs.pkgname }}
+          path: |
+            packaging/aur/out/source/PKGBUILD
+            packaging/aur/out/source/.SRCINFO
+            packaging/aur/out/source/*.pkg.tar.*
+
+  render-bin:
+    name: Render + Build Binary (Arch)
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Resolve package name
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          PKGNAME="${{ github.event.inputs.bin_pkgname }}"
+          if [[ -z "${PKGNAME}" ]]; then
+            PKGNAME="prman-bin"
+          fi
+
+          echo "pkgname=${PKGNAME}" >> "${GITHUB_OUTPUT}"
+
+      - name: Render PKGBUILD
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/render_aur_pkgbuild.py \
+            --pkgname "${{ steps.meta.outputs.pkgname }}" \
+            --variant bin \
+            --template packaging/aur/PKGBUILD-bin.in \
+            --output packaging/aur/out/bin/PKGBUILD
+
+      - name: Install Arch packaging dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${GITHUB_WORKSPACE}/packaging/aur/out/bin"
+          source PKGBUILD
+          deps=(base-devel git namcap python sudo "${depends[@]-}" "${makedepends[@]-}" "${checkdepends[@]-}")
+          mapfile -t deps < <(printf '%s\n' "${deps[@]}" | awk 'NF && !seen[$0]++')
+          pacman -Syu --noconfirm --needed "${deps[@]}"
+
+      - name: Create builder user
+        shell: bash
+        run: |
+          set -euo pipefail
+          useradd --create-home --shell /bin/bash builder
+          printf 'builder ALL=(ALL) NOPASSWD: /usr/bin/pacman\n' > /etc/sudoers.d/builder-pacman
+          chmod 440 /etc/sudoers.d/builder-pacman
+          chown -R builder:builder "${GITHUB_WORKSPACE}"
+
+      - name: Generate checksums and .SRCINFO
+        shell: bash
+        run: |
+          set -euo pipefail
+          runuser -u builder -- env GITHUB_WORKSPACE="${GITHUB_WORKSPACE}" bash -lc '
+            cd "${GITHUB_WORKSPACE}/packaging/aur/out/bin"
+            updpkgsums
+            makepkg --printsrcinfo > .SRCINFO
+          '
+
+      - name: Lint PKGBUILD
+        shell: bash
+        run: |
+          set -euo pipefail
+          runuser -u builder -- env GITHUB_WORKSPACE="${GITHUB_WORKSPACE}" bash -lc '
+            cd "${GITHUB_WORKSPACE}/packaging/aur/out/bin"
+            namcap PKGBUILD .SRCINFO
+          '
+
+      - name: Build package
+        shell: bash
+        run: |
+          set -euo pipefail
+          runuser -u builder -- env GITHUB_WORKSPACE="${GITHUB_WORKSPACE}" bash -lc '
+            cd "${GITHUB_WORKSPACE}/packaging/aur/out/bin"
+            makepkg --syncdeps --cleanbuild --clean --noconfirm
+          '
+
+      - name: Upload rendered AUR files
+        uses: actions/upload-artifact@v4
+        with:
+          name: aur-${{ steps.meta.outputs.pkgname }}
+          path: |
+            packaging/aur/out/bin/PKGBUILD
+            packaging/aur/out/bin/.SRCINFO
+            packaging/aur/out/bin/*.pkg.tar.*

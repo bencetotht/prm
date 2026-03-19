@@ -1,17 +1,9 @@
 # prm
 
 `prm` is a terminal-first project repository manager built with `ratatui`.
-It helps you keep a local index of repositories, manage project TODOs, inspect repo git state, and jump into repo workflows quickly from one TUI.
+It helps you keep a local index of repositories, manage project TODOs, inspect repo git state, and navigate repo workflows quickly.
 
-## Requirements
-
-- Rust `1.88.0` (if using cargo directly)
-- `git` (used for git status/history/release metadata)
-- Optional: `lazygit` (for the `g` shortcut)
-- Optional: `tmux` (for popup/window integrations)
-- Optional: `nix` with flakes enabled
-
-## Quick Start
+## Usage
 
 ```bash
 # Add the current directory (or pass any path)
@@ -21,11 +13,21 @@ prm add .
 prm
 ```
 
+## Requirements
+
+- Rust `1.88.0` (if using cargo directly)
+- `git` (used for git status/history/release metadata)
+- Optional: `lazygit` (for the `g` shortcut)
+- Optional: `tmux` (for popup/window integrations)
+- Optional: `nix` with flakes enabled
+
 Path behavior:
 - Added paths are canonicalized.
 - If you add a subdirectory inside a git repo, `prm` stores the git repo root.
 
-## Run With Cargo
+## Installation
+
+### Run with Cargo
 
 Run without installing:
 
@@ -45,7 +47,7 @@ Make sure to add the `~/.cargo/bin` to your PATH!
 export PATH="~/.cargo/bin:$PATH"
 ```
 
-## Install With Homebrew
+### Install With Homebrew
 
 Install directly from the custom tap:
 
@@ -60,7 +62,21 @@ brew tap bencetotht/prm
 brew install prm
 ```
 
-## Install From GitHub Releases
+### Install From the AUR
+
+
+Using an aur manager like `yay`:
+
+```bash
+yay -S prm-bin
+```
+Source package also available as prman-git. Both AUR packages install the executable as:
+
+```bash
+prm
+```
+
+### Install From GitHub Releases
 
 Download the asset that matches your platform from the GitHub Releases page.
 Current example:
@@ -82,48 +98,22 @@ Release artifacts:
 - `prm-v1.0.2-checksums.txt`
 <!-- release-assets:end -->
 
-## Run With Nix
+### Install via Nix flake
+add the following to your `flake.nix`:
 
-Run directly from this repository:
-
-```bash
-nix run . -- add /path/to/repo
-nix run .
+```nix
+{
+  inputs.prm = {
+      url = "github:bencetotht/prm";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+}
 ```
 
-Install into your profile:
+and then install by adding this into your system packages:
 
-```bash
-nix profile install .
-```
-
-Install directly from GitHub:
-
-```bash
-nix profile install github:bencetotht/prm
-```
-
-## Development
-
-Using cargo directly:
-
-```bash
-cargo fmt --all -- --check
-cargo clippy --locked --all-targets --all-features -- -D warnings
-cargo test --locked --all-targets
-```
-
-Using nix dev shell:
-
-```bash
-nix develop
-cargo run --
-```
-
-Nix CI-equivalent checks:
-
-```bash
-nix flake check
+```nix
+inputs.prm.packages.${pkgs.stdenv.hostPlatform.system}.default
 ```
 
 ## Features
@@ -162,7 +152,7 @@ nix flake check
 
 ### Terminal Compatibility
 
-The main TUI is built on `crossterm` + `ratatui`, so it is not tied to Ghostty. It should behave the same in Kitty, Ghostty, WezTerm, Alacritty, and other terminals with normal alternate-screen, mouse, and ANSI support.
+The main TUI is built on `crossterm` + `ratatui`, so it is not tied to Ghostty. It should behave the same in Kitty, Ghostty, WezTerm, Alacritty, and other terminals.
 
 Theme note:
 
@@ -171,14 +161,6 @@ Theme note:
 - This means a Vim/Neovim colorscheme only affects `prm` indirectly when your terminal palette matches that broader theme setup.
 - If your terminal renders colors poorly, set `PRM_THEME=mono` to force monochrome attributes.
 - `NO_COLOR=1` or `CLICOLOR=0` also force monochrome mode; `PRM_THEME=color` overrides that.
-
-### tmux Notes
-
-Some features rely on tmux and may not behave as expected outside tmux:
-
-- `t` (open terminal window) requires an active tmux session.
-- `g` (lazygit) prefers a tmux popup when running inside tmux; without tmux it falls back to fullscreen lazygit.
-- If tmux popup fails, `prm` falls back to fullscreen lazygit.
 
 ## Hotkey Guide
 
@@ -245,7 +227,7 @@ Modal dialogs:
 | In confirm modal: `y` / `n` | Confirm / cancel |
 | In add-project modal: `Tab` | Switch active field |
 
-## Data & Configuration
+## Data and Configuration
 
 - Default database location is platform data dir under `prm/prm.db`.
   - Example on Linux: `~/.local/share/prm/prm.db`
@@ -257,40 +239,7 @@ export PRM_DB_PATH=/custom/path/prm.db
 ```
 
 ## Contributing
-
-1. Fork and create a feature branch.
-2. Run:
-   - `cargo fmt --all -- --check`
-   - `cargo clippy --locked --all-targets --all-features -- -D warnings`
-   - `cargo test --locked --all-targets`
-3. Add/adjust tests for behavior changes.
-4. Open a pull request.
-
-## Release Flow
-
-1. Keep the repo version in sync before tagging:
-
-   ```bash
-   python3 scripts/sync_version.py v1.2.3
-   python3 scripts/sync_version.py --check v1.2.3
-   cargo test --locked --all-targets
-   ```
-
-2. Optional rehearsal:
-
-   ```bash
-   gh workflow run release.yml -f version=v1.2.3
-   ```
-
-   The manual run builds artifacts, checksums, and a Homebrew formula preview without publishing.
-
-3. Create and push a semver tag like `v1.2.3`.
-4. GitHub Actions syncs versioned files back to `main`, builds release binaries for Linux and macOS, publishes the GitHub Release, and updates the `bencetotht/homebrew-prm` tap.
-5. Install notes in the GitHub Release include the Homebrew command, supported targets, and the combined checksum file.
-
-Maintainer note:
-- The tagged commit is allowed to remain pre-sync. Release automation is responsible for pushing the matching version-file update back to `main`.
-- `nix flake check` remains a Linux-only validation path. It is not the gate for the Homebrew release flow.
+Contributions are welcome, but please open an issue first to discuss your proposed changes and ensure they align with the project goals.
 
 ## License
 
@@ -298,5 +247,3 @@ Dual-licensed under:
 
 - MIT ([LICENSE-MIT](LICENSE-MIT))
 - Apache 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
-
-You may choose either license.

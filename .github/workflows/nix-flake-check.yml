@@ -1,4 +1,4 @@
-name: Nix Flake Check (Linux only)
+name: Nix Flake Check (Linux only) # Turns out mac is expensive
 
 on:
   push:
@@ -25,4 +25,4 @@ jobs:
         uses: DeterminateSystems/magic-nix-cache-action@v11
 
       - name: Run flake checks
-        run: nix flake check --system x86_64-linux
+        run: nix flake check --system x86_64-linux -L
