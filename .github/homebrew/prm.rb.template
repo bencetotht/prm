@@ -9,8 +9,7 @@ class Prm < Formula
       url "$darwin_arm64_url"
       sha256 "$darwin_arm64_sha256"
     else
-      url "$darwin_x86_64_url"
-      sha256 "$darwin_x86_64_sha256"
+      odie "prm: unsupported macOS CPU architecture #{Hardware::CPU.arch}"
     end
   end
 

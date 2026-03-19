@@ -48,7 +48,6 @@ install "./prm-0.1.0-aarch64-apple-darwin/prm" /usr/local/bin/prm
 
 <!-- release-assets:start -->
 - `prm-v0.1.0-x86_64-unknown-linux-gnu.tar.gz`
-- `prm-v0.1.0-x86_64-apple-darwin.tar.gz`
 - `prm-v0.1.0-aarch64-apple-darwin.tar.gz`
 - `prm-v0.1.0-checksums.txt`
 <!-- release-assets:end -->
@@ -169,8 +168,6 @@ fn render_homebrew_formula_includes_urls_and_checksums() {
         .args([
             "--linux-x86-64-sha256",
             "linuxsha",
-            "--darwin-x86-64-sha256",
-            "intelsha",
             "--darwin-arm64-sha256",
             "armsha",
         ])
@@ -183,7 +180,11 @@ fn render_homebrew_formula_includes_urls_and_checksums() {
     assert!(formula.contains(
         "https://github.com/bencetotht/prm/releases/download/v1.2.3/prm-v1.2.3-x86_64-unknown-linux-gnu.tar.gz"
     ));
+    assert!(formula.contains(
+        "https://github.com/bencetotht/prm/releases/download/v1.2.3/prm-v1.2.3-aarch64-apple-darwin.tar.gz"
+    ));
     assert!(formula.contains("sha256 \"linuxsha\""));
+    assert!(formula.contains("unsupported macOS CPU architecture"));
     assert!(formula.contains("assert_match version.to_s"));
 }
 

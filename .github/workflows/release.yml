@@ -94,6 +94,10 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Sync version files for dry-run
+        if: github.event_name == 'workflow_dispatch' && needs.prepare.outputs.should_publish != 'true'
+        run: python3 scripts/sync_version.py ${{ needs.prepare.outputs.release_tag }}
+
       - name: Verify synced files
         run: python3 scripts/sync_version.py --check ${{ needs.prepare.outputs.release_tag }}
 
@@ -110,9 +114,6 @@ jobs:
           - os: ubuntu-latest
             label: linux x86_64
             target: x86_64-unknown-linux-gnu
-          - os: macos-13
-            label: macOS x86_64
-            target: x86_64-apple-darwin
           - os: macos-14
             label: macOS arm64
             target: aarch64-apple-darwin
@@ -120,6 +121,16 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Set up Python
+        if: github.event_name == 'workflow_dispatch' && needs.prepare.outputs.should_publish != 'true'
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - name: Sync version files for dry-run
+        if: github.event_name == 'workflow_dispatch' && needs.prepare.outputs.should_publish != 'true'
+        run: python3 scripts/sync_version.py ${{ needs.prepare.outputs.release_tag }}
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -177,6 +188,10 @@ jobs:
         with:
           python-version: "3.x"
 
+      - name: Sync version files for dry-run
+        if: github.event_name == 'workflow_dispatch' && needs.prepare.outputs.should_publish != 'true'
+        run: python3 scripts/sync_version.py ${{ needs.prepare.outputs.release_tag }}
+
       - name: Download build artifacts
         uses: actions/download-artifact@v4
         with:
@@ -193,18 +208,15 @@ jobs:
           set -euo pipefail
 
           linux_sha="$(awk '{print $1}' "dist/prm-${RELEASE_TAG}-x86_64-unknown-linux-gnu.tar.gz.sha256")"
-          darwin_x86_64_sha="$(awk '{print $1}' "dist/prm-${RELEASE_TAG}-x86_64-apple-darwin.tar.gz.sha256")"
           darwin_arm64_sha="$(awk '{print $1}' "dist/prm-${RELEASE_TAG}-aarch64-apple-darwin.tar.gz.sha256")"
 
           cat \
             "dist/prm-${RELEASE_TAG}-x86_64-unknown-linux-gnu.tar.gz.sha256" \
-            "dist/prm-${RELEASE_TAG}-x86_64-apple-darwin.tar.gz.sha256" \
             "dist/prm-${RELEASE_TAG}-aarch64-apple-darwin.tar.gz.sha256" \
             > "dist/prm-${RELEASE_TAG}-checksums.txt"
 
           {
             echo "linux_sha=${linux_sha}"
-            echo "darwin_x86_64_sha=${darwin_x86_64_sha}"
             echo "darwin_arm64_sha=${darwin_arm64_sha}"
           } >> "${GITHUB_OUTPUT}"
 
@@ -217,7 +229,6 @@ jobs:
             --template .github/homebrew/prm.rb.template \
             --output dist/prm.rb \
             --linux-x86-64-sha256 ${{ steps.checksums.outputs.linux_sha }} \
-            --darwin-x86-64-sha256 ${{ steps.checksums.outputs.darwin_x86_64_sha }} \
             --darwin-arm64-sha256 ${{ steps.checksums.outputs.darwin_arm64_sha }}
 
       - name: Validate Homebrew formula syntax
@@ -246,7 +257,6 @@ jobs:
           ## Supported targets
 
           - x86_64-unknown-linux-gnu
-          - x86_64-apple-darwin
           - aarch64-apple-darwin
 
           ## Checksums
