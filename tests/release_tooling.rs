@@ -61,6 +61,43 @@ fn write_release_fixture(root: &Path) {
     fs::write(root.join("README.md"), sample_readme()).expect("write README.md");
 }
 
+fn init_git_repo(root: &Path) {
+    let status = StdCommand::new("git")
+        .arg("init")
+        .arg(root)
+        .status()
+        .expect("git init");
+    assert!(status.success());
+
+    let status = StdCommand::new("git")
+        .current_dir(root)
+        .args(["config", "user.name", "Release Tester"])
+        .status()
+        .expect("git config user.name");
+    assert!(status.success());
+
+    let status = StdCommand::new("git")
+        .current_dir(root)
+        .args(["config", "user.email", "release-tester@example.com"])
+        .status()
+        .expect("git config user.email");
+    assert!(status.success());
+
+    let status = StdCommand::new("git")
+        .current_dir(root)
+        .args(["add", "Cargo.toml", "Cargo.lock", "README.md"])
+        .status()
+        .expect("git add");
+    assert!(status.success());
+
+    let status = StdCommand::new("git")
+        .current_dir(root)
+        .args(["commit", "-m", "initial release fixture"])
+        .status()
+        .expect("git commit");
+    assert!(status.success());
+}
+
 #[test]
 fn prm_version_matches_manifest_version() {
     Command::new(assert_cmd::cargo::cargo_bin!("prm"))
@@ -148,4 +185,93 @@ fn render_homebrew_formula_includes_urls_and_checksums() {
     ));
     assert!(formula.contains("sha256 \"linuxsha\""));
     assert!(formula.contains("assert_match version.to_s"));
+}
+
+#[test]
+fn render_aur_pkgbuilds_use_expected_package_names() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let source_output = root.path().join("source/PKGBUILD");
+    let bin_output = root.path().join("bin/PKGBUILD");
+
+    let source_status = StdCommand::new(python())
+        .arg(repo_root().join("scripts/render_aur_pkgbuild.py"))
+        .args(["--pkgname", "prman", "--variant", "source", "--template"])
+        .arg(repo_root().join("packaging/aur/PKGBUILD.in"))
+        .args(["--output"])
+        .arg(&source_output)
+        .status()
+        .expect("run source AUR renderer");
+    assert!(source_status.success());
+
+    let bin_status = StdCommand::new(python())
+        .arg(repo_root().join("scripts/render_aur_pkgbuild.py"))
+        .args(["--pkgname", "prman-bin", "--variant", "bin", "--template"])
+        .arg(repo_root().join("packaging/aur/PKGBUILD-bin.in"))
+        .args(["--output"])
+        .arg(&bin_output)
+        .status()
+        .expect("run bin AUR renderer");
+    assert!(bin_status.success());
+
+    let source_pkgbuild = fs::read_to_string(source_output).expect("read source PKGBUILD");
+    let bin_pkgbuild = fs::read_to_string(bin_output).expect("read bin PKGBUILD");
+
+    assert!(source_pkgbuild.contains("pkgname='prman'"));
+    assert!(source_pkgbuild.contains("conflicts=('prman-bin' 'prm')"));
+    assert!(bin_pkgbuild.contains("pkgname='prman-bin'"));
+    assert!(bin_pkgbuild.contains("provides=('prman')"));
+    assert!(bin_pkgbuild.contains("conflicts=('prman' 'prm')"));
+}
+
+#[test]
+fn prepare_release_creates_release_commit_and_tag() {
+    let root = tempfile::tempdir().expect("tempdir");
+    write_release_fixture(root.path());
+    init_git_repo(root.path());
+
+    let status = StdCommand::new(python())
+        .arg(repo_root().join("scripts/prepare_release.py"))
+        .arg("v1.2.3")
+        .arg("--root")
+        .arg(root.path())
+        .status()
+        .expect("run prepare_release.py");
+    assert!(status.success());
+
+    let cargo_toml = fs::read_to_string(root.path().join("Cargo.toml")).expect("read Cargo.toml");
+    assert!(cargo_toml.contains("version = \"1.2.3\""));
+
+    let head_subject = StdCommand::new("git")
+        .current_dir(root.path())
+        .args(["log", "-1", "--pretty=%s"])
+        .output()
+        .expect("git log");
+    assert_eq!(
+        String::from_utf8_lossy(&head_subject.stdout).trim(),
+        "release: v1.2.3"
+    );
+
+    let tag_type = StdCommand::new("git")
+        .current_dir(root.path())
+        .args(["cat-file", "-t", "refs/tags/v1.2.3"])
+        .output()
+        .expect("git cat-file");
+    assert_eq!(String::from_utf8_lossy(&tag_type.stdout).trim(), "tag");
+}
+
+#[test]
+fn prepare_release_check_mode_fails_for_unsynced_files() {
+    let root = tempfile::tempdir().expect("tempdir");
+    write_release_fixture(root.path());
+    init_git_repo(root.path());
+
+    Command::new(python())
+        .arg(repo_root().join("scripts/prepare_release.py"))
+        .arg("v1.2.3")
+        .arg("--root")
+        .arg(root.path())
+        .arg("--check-only")
+        .assert()
+        .failure()
+        .stderr(contains("failed to verify versioned release files"));
 }

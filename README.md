@@ -68,9 +68,16 @@ brew install prm
 Using an aur manager like `yay`:
 
 ```bash
-yay -S prm-bin
+yay -S prman-bin
 ```
-Source package also available as prman-git. Both AUR packages install the executable as:
+
+Source package also available as `prman`:
+
+```bash
+yay -S prman
+```
+
+Both AUR packages install the executable as:
 
 ```bash
 prm
