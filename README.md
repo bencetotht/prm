@@ -24,6 +24,7 @@ prm
 - Optional: `nix` with flakes enabled
 
 Path behavior:
+- `prm add` accepts multiple paths, so `prm add *` processes each matched path as a separate project add.
 - Added paths are canonicalized.
 - If you add a subdirectory inside a git repo, `prm` stores the git repo root.
 
