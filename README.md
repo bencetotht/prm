@@ -5,7 +5,7 @@
 [![CI](https://github.com/bencetotht/prm/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bencetotht/prm/actions/workflows/ci.yml)
 [![Nix flake check](https://github.com/bencetotht/prm/actions/workflows/nix-flake-check.yml/badge.svg?branch=main)](https://github.com/bencetotht/prm/actions/workflows/nix-flake-check.yml)
 [![Latest release](https://img.shields.io/github/v/release/bencetotht/prm)](https://github.com/bencetotht/prm/releases)
-[![Homebrew tap version](https://img.shields.io/homebrew/v/bencetotht/prm/prm)](https://github.com/bencetotht/homebrew-prm)
+[![Homebrew tap version](https://img.shields.io/badge/dynamic/regex?url=https%3A%2F%2Fraw.githubusercontent.com%2Fbencetotht%2Fhomebrew-prm%2Frefs%2Fheads%2Fmain%2FFormula%2Fprm.rb&search=version%20%22(%5B%5E%22%5D%2B)%22&replace=%241&label=homebrew)](https://github.com/bencetotht/homebrew-prm)
 [![AUR binary package](https://img.shields.io/aur/version/prman-bin)](https://aur.archlinux.org/packages/prman-bin)
 [![AUR source package](https://img.shields.io/aur/version/prman)](https://aur.archlinux.org/packages/prman)
 
