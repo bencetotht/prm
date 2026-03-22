@@ -1,7 +1,5 @@
 # prm
 
-## Status
-
 [![CI](https://github.com/bencetotht/prm/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bencetotht/prm/actions/workflows/ci.yml)
 [![Nix flake check](https://github.com/bencetotht/prm/actions/workflows/nix-flake-check.yml/badge.svg?branch=main)](https://github.com/bencetotht/prm/actions/workflows/nix-flake-check.yml)
 [![Latest release](https://img.shields.io/github/v/release/bencetotht/prm)](https://github.com/bencetotht/prm/releases)
