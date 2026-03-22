@@ -1,5 +1,14 @@
 # prm
 
+## Status
+
+[![CI](https://github.com/bencetotht/prm/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/bencetotht/prm/actions/workflows/ci.yml)
+[![Nix flake check](https://github.com/bencetotht/prm/actions/workflows/nix-flake-check.yml/badge.svg?branch=main)](https://github.com/bencetotht/prm/actions/workflows/nix-flake-check.yml)
+[![Latest release](https://img.shields.io/github/v/release/bencetotht/prm)](https://github.com/bencetotht/prm/releases)
+[![Homebrew tap version](https://img.shields.io/homebrew/v/bencetotht/prm/prm)](https://github.com/bencetotht/homebrew-prm)
+[![AUR binary package](https://img.shields.io/aur/version/prman-bin)](https://aur.archlinux.org/packages/prman-bin)
+[![AUR source package](https://img.shields.io/aur/version/prman)](https://aur.archlinux.org/packages/prman)
+
 `prm` is a terminal-first project repository manager built with `ratatui`.
 It helps you keep a local index of repositories, manage project TODOs, inspect repo git state, and navigate repo workflows quickly.
 
