@@ -1,0 +1,307 @@
+name: dependency-track
+
+on:
+  pull_request:
+  push:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  ARTIFACT_DIR: artifacts/security
+  INPUT_DEPENDENCY_TRACK_URL: ${{ vars.DEPENDENCY_TRACK_URL }}
+  INPUT_DEPENDENCY_TRACK_PROJECT_NAME: ${{ vars.DEPENDENCY_TRACK_PROJECT_NAME }}
+  INPUT_DEPENDENCY_TRACK_IMAGE_PROJECT_NAME: ${{ vars.DEPENDENCY_TRACK_IMAGE_PROJECT_NAME }}
+  INPUT_IMAGE_ENABLED: ${{ vars.IMAGE_ENABLED }}
+  INPUT_IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+  INPUT_IMAGE_TAG: ${{ vars.IMAGE_TAG }}
+  INPUT_IMAGE_BUILD_CONTEXT: ${{ vars.IMAGE_BUILD_CONTEXT }}
+  INPUT_DOCKERFILE_PATH: ${{ vars.DOCKERFILE_PATH }}
+  INPUT_TRIVY_VERSION: ${{ vars.TRIVY_VERSION }}
+  INPUT_TRIVY_TIMEOUT: ${{ vars.TRIVY_TIMEOUT }}
+  INPUT_TRIVY_REPORT_SEVERITIES: ${{ vars.TRIVY_REPORT_SEVERITIES }}
+  INPUT_TRIVY_FAIL_SEVERITIES: ${{ vars.TRIVY_FAIL_SEVERITIES }}
+
+jobs:
+  repo-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Prepare environment
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$ARTIFACT_DIR"
+
+          project_name="${INPUT_DEPENDENCY_TRACK_PROJECT_NAME:-${GITHUB_REPOSITORY##*/}}"
+          project_version="${GITHUB_SHA}"
+          image_project_name="${INPUT_DEPENDENCY_TRACK_IMAGE_PROJECT_NAME:-${project_name}-image}"
+          trivy_version="${INPUT_TRIVY_VERSION:-0.69.3}"
+          trivy_timeout="${INPUT_TRIVY_TIMEOUT:-10m}"
+          trivy_report_severities="${INPUT_TRIVY_REPORT_SEVERITIES:-UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL}"
+          trivy_fail_severities="${INPUT_TRIVY_FAIL_SEVERITIES:-CRITICAL}"
+
+          {
+            echo "PROJECT_NAME=$project_name"
+            echo "PROJECT_VERSION=$project_version"
+            echo "IMAGE_PROJECT_NAME=$image_project_name"
+            echo "TRIVY_VERSION=$trivy_version"
+            echo "TRIVY_TIMEOUT=$trivy_timeout"
+            echo "TRIVY_REPORT_SEVERITIES=$trivy_report_severities"
+            echo "TRIVY_FAIL_SEVERITIES=$trivy_fail_severities"
+          } >> "$GITHUB_ENV"
+
+      - name: Install pinned Trivy
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          trivy_archive="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          trivy_base_url="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}"
+
+          curl -fsSLO "${trivy_base_url}/${trivy_archive}"
+          curl -fsSLO "${trivy_base_url}/trivy_${TRIVY_VERSION}_checksums.txt"
+          grep " ${trivy_archive}$" "trivy_${TRIVY_VERSION}_checksums.txt" | sha256sum -c -
+          sudo tar -xzf "${trivy_archive}" -C /usr/local/bin trivy
+          trivy version
+
+      - name: Generate application SBOM
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          trivy fs \
+            --no-progress \
+            --timeout "${TRIVY_TIMEOUT}" \
+            --format cyclonedx \
+            --output "${ARTIFACT_DIR}/app-sbom.cdx.json" \
+            .
+
+      - name: Generate repository vulnerability JSON
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          trivy fs \
+            --no-progress \
+            --timeout "${TRIVY_TIMEOUT}" \
+            --scanners vuln \
+            --severity "${TRIVY_REPORT_SEVERITIES}" \
+            --format json \
+            --output "${ARTIFACT_DIR}/repo-vulns.json" \
+            .
+
+      - name: Upload application SBOM to Dependency-Track
+        if: ${{ github.event_name == 'schedule' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+        env:
+          DEPENDENCY_TRACK_URL: ${{ vars.DEPENDENCY_TRACK_URL }}
+          DEPENDENCY_TRACK_API_KEY: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DEPENDENCY_TRACK_URL:-}" ] || [ -z "${DEPENDENCY_TRACK_API_KEY:-}" ]; then
+            echo "DEPENDENCY_TRACK_URL and DEPENDENCY_TRACK_API_KEY are required for authoritative uploads." >&2
+            exit 1
+          fi
+
+          curl --fail --silent --show-error \
+            -X POST "${DEPENDENCY_TRACK_URL%/}/api/v1/bom" \
+            -H "X-Api-Key: ${DEPENDENCY_TRACK_API_KEY}" \
+            -F "autoCreate=true" \
+            -F "projectName=${PROJECT_NAME}" \
+            -F "projectVersion=${PROJECT_VERSION}" \
+            -F "bom=@${ARTIFACT_DIR}/app-sbom.cdx.json"
+
+          echo
+          echo "Uploaded ${PROJECT_NAME}:${PROJECT_VERSION}"
+
+      - name: Enforce repository vulnerability gate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gate_status=0
+          trivy fs \
+            --no-progress \
+            --timeout "${TRIVY_TIMEOUT}" \
+            --scanners vuln \
+            --severity "${TRIVY_FAIL_SEVERITIES}" \
+            --exit-code 1 \
+            --format table \
+            . | tee "${ARTIFACT_DIR}/repo-gate.txt" || gate_status=$?
+
+          exit "${gate_status}"
+
+      - name: Upload repository artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: repo-security-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            artifacts/security/app-sbom.cdx.json
+            artifacts/security/repo-vulns.json
+            artifacts/security/repo-gate.txt
+
+  image-scan:
+    if: ${{ vars.IMAGE_ENABLED == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      - name: Prepare environment
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p "$ARTIFACT_DIR"
+
+          project_name="${INPUT_DEPENDENCY_TRACK_PROJECT_NAME:-${GITHUB_REPOSITORY##*/}}"
+          image_project_name="${INPUT_DEPENDENCY_TRACK_IMAGE_PROJECT_NAME:-${project_name}-image}"
+          project_version="${GITHUB_SHA}"
+          image_name="${INPUT_IMAGE_NAME:-}"
+          image_tag="${INPUT_IMAGE_TAG:-$GITHUB_SHA}"
+          image_build_context="${INPUT_IMAGE_BUILD_CONTEXT:-.}"
+          dockerfile_path="${INPUT_DOCKERFILE_PATH:-Dockerfile}"
+          trivy_version="${INPUT_TRIVY_VERSION:-0.69.3}"
+          trivy_timeout="${INPUT_TRIVY_TIMEOUT:-10m}"
+          trivy_report_severities="${INPUT_TRIVY_REPORT_SEVERITIES:-UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL}"
+          trivy_fail_severities="${INPUT_TRIVY_FAIL_SEVERITIES:-CRITICAL}"
+
+          if [ -z "$image_name" ]; then
+            echo "IMAGE_NAME must be set when IMAGE_ENABLED=true." >&2
+            exit 1
+          fi
+
+          {
+            echo "PROJECT_VERSION=$project_version"
+            echo "IMAGE_PROJECT_NAME=$image_project_name"
+            echo "IMAGE_NAME=$image_name"
+            echo "IMAGE_TAG=$image_tag"
+            echo "LOCAL_IMAGE_REF=${image_name}:${image_tag}"
+            echo "IMAGE_BUILD_CONTEXT=$image_build_context"
+            echo "DOCKERFILE_PATH=$dockerfile_path"
+            echo "TRIVY_VERSION=$trivy_version"
+            echo "TRIVY_TIMEOUT=$trivy_timeout"
+            echo "TRIVY_REPORT_SEVERITIES=$trivy_report_severities"
+            echo "TRIVY_FAIL_SEVERITIES=$trivy_fail_severities"
+          } >> "$GITHUB_ENV"
+
+      - name: Install pinned Trivy
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          trivy_archive="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          trivy_base_url="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}"
+
+          curl -fsSLO "${trivy_base_url}/${trivy_archive}"
+          curl -fsSLO "${trivy_base_url}/trivy_${TRIVY_VERSION}_checksums.txt"
+          grep " ${trivy_archive}$" "trivy_${TRIVY_VERSION}_checksums.txt" | sha256sum -c -
+          sudo tar -xzf "${trivy_archive}" -C /usr/local/bin trivy
+          trivy version
+
+      - name: Build local image
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          docker build \
+            --iidfile "${ARTIFACT_DIR}/image.iid" \
+            -f "${DOCKERFILE_PATH}" \
+            -t "${LOCAL_IMAGE_REF}" \
+            "${IMAGE_BUILD_CONTEXT}"
+
+          docker image inspect "${LOCAL_IMAGE_REF}" --format '{{.Id}}' | tee "${ARTIFACT_DIR}/image-id.txt"
+
+      - name: Generate image SBOM
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          trivy image \
+            --no-progress \
+            --timeout "${TRIVY_TIMEOUT}" \
+            --format cyclonedx \
+            --output "${ARTIFACT_DIR}/image-sbom.cdx.json" \
+            "${LOCAL_IMAGE_REF}"
+
+      - name: Generate image vulnerability JSON
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          trivy image \
+            --no-progress \
+            --timeout "${TRIVY_TIMEOUT}" \
+            --scanners vuln \
+            --severity "${TRIVY_REPORT_SEVERITIES}" \
+            --format json \
+            --output "${ARTIFACT_DIR}/image-vulns.json" \
+            "${LOCAL_IMAGE_REF}"
+
+      - name: Upload image SBOM to Dependency-Track
+        if: ${{ github.event_name == 'schedule' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}
+        env:
+          DEPENDENCY_TRACK_URL: ${{ vars.DEPENDENCY_TRACK_URL }}
+          DEPENDENCY_TRACK_API_KEY: ${{ secrets.DEPENDENCY_TRACK_API_KEY }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [ -z "${DEPENDENCY_TRACK_URL:-}" ] || [ -z "${DEPENDENCY_TRACK_API_KEY:-}" ]; then
+            echo "DEPENDENCY_TRACK_URL and DEPENDENCY_TRACK_API_KEY are required for authoritative uploads." >&2
+            exit 1
+          fi
+
+          curl --fail --silent --show-error \
+            -X POST "${DEPENDENCY_TRACK_URL%/}/api/v1/bom" \
+            -H "X-Api-Key: ${DEPENDENCY_TRACK_API_KEY}" \
+            -F "autoCreate=true" \
+            -F "projectName=${IMAGE_PROJECT_NAME}" \
+            -F "projectVersion=${PROJECT_VERSION}" \
+            -F "bom=@${ARTIFACT_DIR}/image-sbom.cdx.json"
+
+          echo
+          echo "Uploaded ${IMAGE_PROJECT_NAME}:${PROJECT_VERSION}"
+
+      - name: Enforce image vulnerability gate
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          gate_status=0
+          trivy image \
+            --no-progress \
+            --timeout "${TRIVY_TIMEOUT}" \
+            --scanners vuln \
+            --severity "${TRIVY_FAIL_SEVERITIES}" \
+            --exit-code 1 \
+            --format table \
+            "${LOCAL_IMAGE_REF}" | tee "${ARTIFACT_DIR}/image-gate.txt" || gate_status=$?
+
+          exit "${gate_status}"
+
+      - name: Upload image artifacts
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: image-security-${{ github.run_id }}
+          retention-days: 14
+          if-no-files-found: error
+          path: |
+            artifacts/security/image-sbom.cdx.json
+            artifacts/security/image-vulns.json
+            artifacts/security/image-gate.txt
+            artifacts/security/image-id.txt
+            artifacts/security/image.iid
+
