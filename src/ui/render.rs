@@ -1,5 +1,6 @@
 use ratatui::prelude::*;
 use ratatui::widgets::{Block, Clear, List, ListItem, ListState, Paragraph, Wrap};
+use unicode_width::{UnicodeWidthChar, UnicodeWidthStr};
 
 use crate::app::state::{AddProjectField, AppState, FocusPane, Modal};
 use crate::fs::agents::AgentsContent;
@@ -8,6 +9,9 @@ use crate::meta;
 use crate::ui::layout::{centered_rect, split_main, split_right_column};
 use crate::ui::theme;
 use crate::ui::widgets::pane_block;
+
+const TODO_HIGHLIGHT_SYMBOL: &str = "▌ ";
+const TODO_ELLIPSIS: &str = "...";
 
 pub fn render(frame: &mut Frame<'_>, app: &mut AppState) {
     let (panes, footer) = split_main(frame.area());
@@ -111,6 +115,7 @@ fn render_todos(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
         "[2] Todos"
     };
     let block = pane_block(title, app.focus == FocusPane::Todos);
+    let list_width = block.inner(area).width as usize;
 
     if app.todos.is_empty() {
         let text = vec![Line::from("No todos"), Line::from("Press n to add one")];
@@ -124,23 +129,55 @@ fn render_todos(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
         .iter()
         .map(|todo| {
             let check = if todo.done { "[x]" } else { "[ ]" };
+            let prefix = format!("{check} ");
+            let title_width = list_width
+                .saturating_sub(TODO_HIGHLIGHT_SYMBOL.width())
+                .saturating_sub(prefix.width());
+            let title = truncate_with_ellipsis(&todo.title, title_width);
             let style = if todo.done {
                 theme::done_todo_style()
             } else {
                 Style::default()
             };
-            ListItem::new(Line::styled(format!("{check} {}", todo.title), style))
+            ListItem::new(Line::styled(format!("{prefix}{title}"), style))
         })
         .collect::<Vec<_>>();
 
     let list = List::new(items)
         .block(block)
         .highlight_style(theme::selected_item_style())
-        .highlight_symbol("▌ ");
+        .highlight_symbol(TODO_HIGHLIGHT_SYMBOL);
 
     let mut state = ListState::default();
     state.select(Some(app.selected_todo));
     frame.render_stateful_widget(list, area, &mut state);
+}
+
+fn truncate_with_ellipsis(text: &str, max_width: usize) -> String {
+    if text.width() <= max_width {
+        return text.to_string();
+    }
+
+    if max_width <= TODO_ELLIPSIS.width() {
+        return ".".repeat(max_width);
+    }
+
+    let content_width = max_width - TODO_ELLIPSIS.width();
+    let mut width = 0;
+    let mut truncated = String::new();
+
+    for ch in text.chars() {
+        let ch_width = ch.width().unwrap_or(0);
+        if width + ch_width > content_width {
+            break;
+        }
+
+        width += ch_width;
+        truncated.push(ch);
+    }
+
+    truncated.push_str(TODO_ELLIPSIS);
+    truncated
 }
 
 fn render_agents(frame: &mut Frame<'_>, app: &mut AppState, area: Rect) {
@@ -365,12 +402,35 @@ fn render_modal(frame: &mut Frame<'_>, modal: Modal) {
 
 #[cfg(test)]
 mod tests {
-    use super::project_active_todo_count_prefix;
+    use super::{project_active_todo_count_prefix, truncate_with_ellipsis};
 
     #[test]
     fn project_active_todo_count_prefix_caps_after_single_digits() {
         assert_eq!(project_active_todo_count_prefix(0), " 0 ");
         assert_eq!(project_active_todo_count_prefix(9), " 9 ");
         assert_eq!(project_active_todo_count_prefix(10), "9+ ");
+    }
+
+    #[test]
+    fn truncate_with_ellipsis_keeps_short_text() {
+        assert_eq!(truncate_with_ellipsis("short todo", 10), "short todo");
+    }
+
+    #[test]
+    fn truncate_with_ellipsis_marks_cut_text() {
+        assert_eq!(truncate_with_ellipsis("long todo title", 10), "long to...");
+    }
+
+    #[test]
+    fn truncate_with_ellipsis_handles_tiny_widths() {
+        assert_eq!(truncate_with_ellipsis("long", 0), "");
+        assert_eq!(truncate_with_ellipsis("long", 1), ".");
+        assert_eq!(truncate_with_ellipsis("long", 2), "..");
+        assert_eq!(truncate_with_ellipsis("long", 3), "...");
+    }
+
+    #[test]
+    fn truncate_with_ellipsis_respects_wide_char_width() {
+        assert_eq!(truncate_with_ellipsis("ab你好cd", 6), "ab...");
     }
 }

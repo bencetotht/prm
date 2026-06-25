@@ -28,6 +28,7 @@ crossterm = "0.28"
 directories = "5.0"
 ratatui = "0.29"
 rusqlite = { version = "0.32", features = ["bundled"] }
+unicode-width = "0.2"
 
 [dev-dependencies]
 assert_cmd = "2.0"
