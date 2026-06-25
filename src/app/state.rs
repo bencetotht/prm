@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 use std::path::Path;
+use std::sync::mpsc::{self, Receiver, TryRecvError};
+use std::thread;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -96,6 +98,14 @@ pub enum ExternalCommand {
     },
 }
 
+#[derive(Debug)]
+struct GitRefreshResult {
+    generation: u64,
+    path: String,
+    status: GitProjectStatus,
+    release: GitRelease,
+}
+
 pub struct AppState {
     pub(crate) repo: Repository,
     pub(crate) projects: Vec<Project>,
@@ -119,6 +129,9 @@ pub struct AppState {
     pub(crate) pending_external_command: Option<ExternalCommand>,
     pub(crate) pending_todo_delete: bool,
     last_git_refresh: Instant,
+    git_refresh_generation: u64,
+    git_refresh_rx: Option<Receiver<GitRefreshResult>>,
+    git_refresh_pending: usize,
     last_db_refresh: Instant,
     last_external_db_version: Option<i64>,
     quit: bool,
@@ -149,12 +162,16 @@ impl AppState {
             pending_external_command: None,
             pending_todo_delete: false,
             last_git_refresh: Instant::now() - GIT_REFRESH_INTERVAL,
-            last_db_refresh: Instant::now() - DB_REFRESH_INTERVAL,
+            git_refresh_generation: 0,
+            git_refresh_rx: None,
+            git_refresh_pending: 0,
+            last_db_refresh: Instant::now(),
             last_external_db_version: None,
             quit: false,
         };
 
-        app.reload_projects()?;
+        app.reload_projects_without_git()?;
+        app.start_parallel_git_refresh();
         app.sync_external_db_version();
         Ok(app)
     }
@@ -207,7 +224,7 @@ impl AppState {
         self.git_status_cache
             .get(path)
             .cloned()
-            .unwrap_or(GitProjectStatus::NotGit)
+            .unwrap_or(GitProjectStatus::Loading)
     }
 
     pub fn project_git_release(&self, path: &str) -> GitRelease {
@@ -248,13 +265,18 @@ impl AppState {
     }
 
     pub fn tick(&mut self) {
+        self.drain_git_refresh_results();
         self.refresh_from_external_db_changes();
+
+        if self.git_refresh_rx.is_some() {
+            return;
+        }
 
         if self.last_git_refresh.elapsed() < GIT_REFRESH_INTERVAL {
             return;
         }
 
-        self.refresh_git_tracking(true);
+        self.start_parallel_git_refresh();
     }
 
     pub fn handle_key_event(&mut self, key: KeyEvent) {
@@ -1066,15 +1088,24 @@ impl AppState {
     }
 
     fn reload_projects(&mut self) -> Result<()> {
+        self.reload_projects_with_git(true)
+    }
+
+    fn reload_projects_without_git(&mut self) -> Result<()> {
+        self.reload_projects_with_git(false)
+    }
+
+    fn reload_projects_with_git(&mut self, refresh_git: bool) -> Result<()> {
         let previous_id = self.selected_project_id();
         let filter = Some(self.filter_input.as_str()).filter(|value| !value.trim().is_empty());
         self.projects = self.repo.list_projects(self.show_archived, filter)?;
-        self.refresh_git_statuses();
 
         if self.projects.is_empty() {
             self.selected_project = 0;
             self.todos.clear();
             self.selected_todo = 0;
+            self.git_refresh_rx = None;
+            self.git_refresh_pending = 0;
             return Ok(());
         }
 
@@ -1093,8 +1124,11 @@ impl AppState {
         }
 
         self.load_todos_for_selected_project()?;
-        self.refresh_selected_git_history(true);
-        self.refresh_selected_git_release(true);
+        if refresh_git {
+            self.refresh_selected_git_history(true);
+            self.refresh_selected_git_release(true);
+            self.start_parallel_git_refresh();
+        }
         self.agents_scroll = 0;
         self.git_history_scroll = 0;
         self.sync_external_db_version();
@@ -1117,18 +1151,6 @@ impl AppState {
         self.git_history_scroll = 0;
     }
 
-    fn refresh_git_tracking(&mut self, include_history: bool) {
-        self.refresh_git_statuses();
-        if include_history {
-            self.refresh_selected_git_history(true);
-            self.refresh_selected_git_release(true);
-        } else {
-            self.refresh_selected_git_history(false);
-            self.refresh_selected_git_release(false);
-        }
-        self.last_git_refresh = Instant::now();
-    }
-
     fn refresh_selected_git_tracking(&mut self) {
         let Some(project) = self.selected_project().cloned() else {
             return;
@@ -1141,6 +1163,76 @@ impl AppState {
             .insert(project.path.clone(), load_git_release(path));
         self.refresh_selected_git_history(true);
         self.last_git_refresh = Instant::now();
+    }
+
+    fn start_parallel_git_refresh(&mut self) {
+        if self.projects.is_empty() {
+            self.git_refresh_rx = None;
+            self.git_refresh_pending = 0;
+            self.last_git_refresh = Instant::now();
+            return;
+        }
+
+        self.git_refresh_generation = self.git_refresh_generation.wrapping_add(1);
+        let generation = self.git_refresh_generation;
+        let (tx, rx) = mpsc::channel();
+        self.git_refresh_rx = Some(rx);
+        self.git_refresh_pending = self.projects.len();
+
+        for project in self.projects.clone() {
+            self.git_status_cache
+                .entry(project.path.clone())
+                .or_insert(GitProjectStatus::Loading);
+
+            let tx = tx.clone();
+            thread::spawn(move || {
+                let project_path = project.path;
+                let path = Path::new(&project_path);
+                let status = probe_project_status(path);
+                let release = load_git_release(path);
+                let _ = tx.send(GitRefreshResult {
+                    generation,
+                    path: project_path,
+                    status,
+                    release,
+                });
+            });
+        }
+    }
+
+    fn drain_git_refresh_results(&mut self) {
+        let Some(rx) = self.git_refresh_rx.take() else {
+            return;
+        };
+
+        loop {
+            match rx.try_recv() {
+                Ok(result) => {
+                    if result.generation != self.git_refresh_generation {
+                        continue;
+                    }
+
+                    self.git_status_cache
+                        .insert(result.path.clone(), result.status);
+                    self.git_release_cache.insert(result.path, result.release);
+                    self.git_refresh_pending = self.git_refresh_pending.saturating_sub(1);
+                }
+                Err(TryRecvError::Empty) => {
+                    self.git_refresh_rx = Some(rx);
+                    return;
+                }
+                Err(TryRecvError::Disconnected) => {
+                    self.git_refresh_pending = 0;
+                    self.last_git_refresh = Instant::now();
+                    return;
+                }
+            }
+
+            if self.git_refresh_pending == 0 {
+                self.last_git_refresh = Instant::now();
+                return;
+            }
+        }
     }
 
     fn refresh_from_external_db_changes(&mut self) {
@@ -1174,18 +1266,6 @@ impl AppState {
         if let Ok(version) = self.repo.external_data_version() {
             self.last_external_db_version = Some(version);
         }
-    }
-
-    fn refresh_git_statuses(&mut self) {
-        let mut next_status = HashMap::with_capacity(self.projects.len());
-        let mut next_release = HashMap::with_capacity(self.projects.len());
-        for project in &self.projects {
-            let path = Path::new(&project.path);
-            next_status.insert(project.path.clone(), probe_project_status(path));
-            next_release.insert(project.path.clone(), load_git_release(path));
-        }
-        self.git_status_cache = next_status;
-        self.git_release_cache = next_release;
     }
 
     fn refresh_selected_git_history(&mut self, force: bool) {

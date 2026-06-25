@@ -3,6 +3,7 @@ use std::process::Command;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum GitProjectStatus {
+    Loading,
     Changed,
     WaitingToPush,
     Committed,
@@ -34,6 +35,7 @@ pub enum GitRelease {
 impl GitProjectStatus {
     pub fn short_label(&self) -> &'static str {
         match self {
+            Self::Loading => "...",
             Self::Changed => "CHG",
             Self::WaitingToPush => "PUSH",
             Self::Committed => "COMMIT",

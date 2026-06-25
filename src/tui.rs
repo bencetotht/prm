@@ -58,7 +58,6 @@ fn run_loop(
     app: &mut AppState,
 ) -> Result<()> {
     loop {
-        app.tick();
         terminal.draw(|frame| ui::render::render(frame, app))?;
 
         if app.should_quit() {
@@ -79,6 +78,8 @@ fn run_loop(
         if let Some(command) = app.take_pending_external_command() {
             handle_external_command(terminal, app, command);
         }
+
+        app.tick();
     }
 
     Ok(())

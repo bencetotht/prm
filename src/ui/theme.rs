@@ -146,6 +146,7 @@ pub fn help_style() -> Style {
 pub fn git_status_style(status: &GitProjectStatus) -> Style {
     match theme_mode() {
         ThemeMode::Color => match status {
+            GitProjectStatus::Loading => Style::default().fg(Color::Gray),
             GitProjectStatus::Changed => Style::default().fg(Color::Yellow),
             GitProjectStatus::WaitingToPush => Style::default().fg(Color::Cyan),
             GitProjectStatus::Committed => Style::default().fg(Color::Magenta),
@@ -161,6 +162,7 @@ pub fn git_status_style(status: &GitProjectStatus) -> Style {
             }
         },
         ThemeMode::Monochrome => match status {
+            GitProjectStatus::Loading => Style::default().add_modifier(Modifier::DIM),
             GitProjectStatus::Changed => Style::default().add_modifier(Modifier::BOLD),
             GitProjectStatus::WaitingToPush => Style::default().add_modifier(Modifier::BOLD),
             GitProjectStatus::Committed => Style::default(),
