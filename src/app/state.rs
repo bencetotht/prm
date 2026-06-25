@@ -168,7 +168,7 @@ impl AppState {
     }
 
     pub fn refresh_after_external_git_tool(&mut self) {
-        self.refresh_git_tracking(true);
+        self.refresh_selected_git_tracking();
         self.status = "Refreshed git state after lazygit".to_string();
     }
 
@@ -1126,6 +1126,20 @@ impl AppState {
             self.refresh_selected_git_history(false);
             self.refresh_selected_git_release(false);
         }
+        self.last_git_refresh = Instant::now();
+    }
+
+    fn refresh_selected_git_tracking(&mut self) {
+        let Some(project) = self.selected_project().cloned() else {
+            return;
+        };
+
+        let path = Path::new(&project.path);
+        self.git_status_cache
+            .insert(project.path.clone(), probe_project_status(path));
+        self.git_release_cache
+            .insert(project.path.clone(), load_git_release(path));
+        self.refresh_selected_git_history(true);
         self.last_git_refresh = Instant::now();
     }
 
