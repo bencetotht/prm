@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{Context, Result, anyhow};
@@ -213,6 +214,35 @@ impl Repository {
             .collect::<rusqlite::Result<Vec<_>>>()?;
 
         Ok(rows)
+    }
+
+    pub fn active_todo_counts(&self, project_ids: &[i64]) -> Result<HashMap<i64, usize>> {
+        if project_ids.is_empty() {
+            return Ok(HashMap::new());
+        }
+
+        let placeholders = std::iter::repeat_n("?", project_ids.len())
+            .collect::<Vec<_>>()
+            .join(",");
+        let query = format!(
+            "SELECT project_id, COUNT(*)
+             FROM todos
+             WHERE done = 0 AND project_id IN ({placeholders})
+             GROUP BY project_id"
+        );
+
+        let mut stmt = self.conn.prepare(&query)?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(project_ids.iter()), |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, i64>(1)?))
+        })?;
+
+        let mut counts = HashMap::new();
+        for row in rows {
+            let (project_id, count) = row?;
+            counts.insert(project_id, count.max(0) as usize);
+        }
+
+        Ok(counts)
     }
 
     pub fn create_todo(&self, project_id: i64, title: &str) -> Result<Todo> {
@@ -549,5 +579,34 @@ mod tests {
         assert!(!todos[0].done);
         assert_eq!(todos[1].id, first.id);
         assert!(todos[1].done);
+    }
+
+    #[test]
+    fn active_todo_counts_only_include_incomplete_todos() {
+        let repo = Repository::open_in_memory().expect("in-memory repo");
+        let first_dir = tempfile::tempdir().expect("first project dir");
+        let second_dir = tempfile::tempdir().expect("second project dir");
+        let first = repo
+            .upsert_project(first_dir.path(), Some("first"))
+            .expect("insert first project")
+            .project;
+        let second = repo
+            .upsert_project(second_dir.path(), Some("second"))
+            .expect("insert second project")
+            .project;
+
+        let done = repo.create_todo(first.id, "done").expect("done todo");
+        repo.toggle_todo(done.id).expect("mark done");
+        repo.create_todo(first.id, "active one")
+            .expect("active todo");
+        repo.create_todo(first.id, "active two")
+            .expect("active todo");
+
+        let counts = repo
+            .active_todo_counts(&[first.id, second.id])
+            .expect("active counts");
+
+        assert_eq!(counts.get(&first.id), Some(&2));
+        assert_eq!(counts.get(&second.id), None);
     }
 }

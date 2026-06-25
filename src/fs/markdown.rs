@@ -71,6 +71,14 @@ pub fn list_todos(project_path: &Path, project_id: i64) -> Result<Vec<Todo>> {
     Ok(todos)
 }
 
+pub fn active_todo_count(project_path: &Path) -> Result<usize> {
+    Ok(read_lines(project_path)?
+        .iter()
+        .filter_map(|line| parse_todo_line(line))
+        .filter(|(done, _)| !done)
+        .count())
+}
+
 pub fn create_todo(project_path: &Path, title: &str) -> Result<()> {
     let normalized = title.trim();
     if normalized.is_empty() {
@@ -198,6 +206,13 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let todos = list_todos(dir.path(), 1).expect("list todos");
         assert!(todos.is_empty());
+    }
+
+    #[test]
+    fn active_todo_count_only_counts_unchecked_items() {
+        let dir = setup("- [ ] Task A\n- [x] Task B\n- [X] Task C\n- [ ] Task D\n");
+        let count = active_todo_count(dir.path()).expect("active count");
+        assert_eq!(count, 2);
     }
 
     #[test]

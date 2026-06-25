@@ -54,8 +54,13 @@ fn render_projects(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             let marker = if project.archived { "[A]" } else { "   " };
             let git_status = app.project_git_status(&project.path);
             let release = app.project_git_release(&project.path);
+            let active_todo_count = app.project_active_todo_count(project.id);
             ListItem::new(Line::from(vec![
                 Span::raw(format!("{marker} ")),
+                Span::styled(
+                    project_active_todo_count_prefix(active_todo_count),
+                    theme::muted_style(),
+                ),
                 Span::styled(
                     format!("[{}]", git_status.short_label()),
                     theme::git_status_style(&git_status),
@@ -74,6 +79,15 @@ fn render_projects(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     let mut state = ListState::default();
     state.select(Some(app.selected_project));
     frame.render_stateful_widget(list, area, &mut state);
+}
+
+fn project_active_todo_count_prefix(count: usize) -> String {
+    let label = if count > 9 {
+        "9+".to_string()
+    } else {
+        count.to_string()
+    };
+    format!("{label:>2} ")
 }
 
 fn project_release_suffix(release: GitRelease) -> String {
@@ -346,5 +360,17 @@ fn render_modal(frame: &mut Frame<'_>, modal: Modal) {
                 .wrap(Wrap { trim: false });
             frame.render_widget(widget, area);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::project_active_todo_count_prefix;
+
+    #[test]
+    fn project_active_todo_count_prefix_caps_after_single_digits() {
+        assert_eq!(project_active_todo_count_prefix(0), " 0 ");
+        assert_eq!(project_active_todo_count_prefix(9), " 9 ");
+        assert_eq!(project_active_todo_count_prefix(10), "9+ ");
     }
 }

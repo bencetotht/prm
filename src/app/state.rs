@@ -123,6 +123,7 @@ pub struct AppState {
     pub(crate) agents_scroll: u16,
     pub(crate) git_history_scroll: u16,
     pub(crate) agents_cache: HashMap<String, AgentsContent>,
+    pub(crate) active_todo_count_cache: HashMap<i64, usize>,
     pub(crate) git_status_cache: HashMap<String, GitProjectStatus>,
     pub(crate) git_history_cache: HashMap<String, GitHistory>,
     pub(crate) git_release_cache: HashMap<String, GitRelease>,
@@ -156,6 +157,7 @@ impl AppState {
             agents_scroll: 0,
             git_history_scroll: 0,
             agents_cache: HashMap::new(),
+            active_todo_count_cache: HashMap::new(),
             git_status_cache: HashMap::new(),
             git_history_cache: HashMap::new(),
             git_release_cache: HashMap::new(),
@@ -232,6 +234,13 @@ impl AppState {
             .get(path)
             .cloned()
             .unwrap_or(GitRelease::NotGit)
+    }
+
+    pub fn project_active_todo_count(&self, project_id: i64) -> usize {
+        self.active_todo_count_cache
+            .get(&project_id)
+            .copied()
+            .unwrap_or(0)
     }
 
     pub fn current_git_history(&mut self) -> GitHistory {
@@ -1079,6 +1088,10 @@ impl AppState {
         } else {
             self.selected_todo = self.selected_todo.min(self.todos.len() - 1);
         }
+        self.active_todo_count_cache.insert(
+            project.id,
+            self.todos.iter().filter(|todo| !todo.done).count(),
+        );
         Ok(())
     }
 
@@ -1102,6 +1115,7 @@ impl AppState {
         let previous_id = self.selected_project_id();
         let filter = Some(self.filter_input.as_str()).filter(|value| !value.trim().is_empty());
         self.projects = self.repo.list_projects(self.show_archived, filter)?;
+        self.refresh_active_todo_counts()?;
 
         if self.projects.is_empty() {
             self.selected_project = 0;
@@ -1135,6 +1149,31 @@ impl AppState {
         self.agents_scroll = 0;
         self.git_history_scroll = 0;
         self.sync_external_db_version();
+        Ok(())
+    }
+
+    fn refresh_active_todo_counts(&mut self) -> Result<()> {
+        self.active_todo_count_cache.clear();
+
+        let db_project_ids = self
+            .projects
+            .iter()
+            .filter(|project| project.todo_source != "markdown")
+            .map(|project| project.id)
+            .collect::<Vec<_>>();
+
+        self.active_todo_count_cache
+            .extend(self.repo.active_todo_counts(&db_project_ids)?);
+
+        for project in self
+            .projects
+            .iter()
+            .filter(|project| project.todo_source == "markdown")
+        {
+            let count = crate::fs::markdown::active_todo_count(Path::new(&project.path))?;
+            self.active_todo_count_cache.insert(project.id, count);
+        }
+
         Ok(())
     }
 
