@@ -280,11 +280,6 @@ impl AppState {
     }
 
     pub fn handle_key_event(&mut self, key: KeyEvent) {
-        if events::map_global(key) == Action::Quit {
-            self.quit = true;
-            return;
-        }
-
         if self.show_help {
             self.handle_help_key(key);
             return;
@@ -297,6 +292,11 @@ impl AppState {
 
         if self.filter_mode {
             self.handle_filter_key(key);
+            return;
+        }
+
+        if events::map_global(key) == Action::Quit {
+            self.quit = true;
             return;
         }
 
@@ -513,7 +513,7 @@ impl AppState {
     }
 
     fn handle_modal_key(&mut self, key: KeyEvent) {
-        if matches!(key.code, KeyCode::Esc | KeyCode::Char('q')) {
+        if matches!(key.code, KeyCode::Esc) {
             self.modal = None;
             self.status = "Canceled".to_string();
             return;
@@ -1367,7 +1367,7 @@ mod tests {
 
     use super::{
         AddProjectField, AddProjectModal, AppState, ConfirmAction, DB_REFRESH_INTERVAL,
-        ExternalCommand, FocusPane, Modal, PaneAreas,
+        ExternalCommand, FocusPane, InputPurpose, Modal, PaneAreas, SingleInputModal,
     };
 
     fn test_state() -> AppState {
@@ -1681,6 +1681,90 @@ mod tests {
             Some(Modal::AddProject(ref add)) => assert_eq!(add.path, "g"),
             _ => panic!("expected add-project modal"),
         }
+    }
+
+    #[test]
+    fn input_modal_accepts_q_and_only_escape_cancels() {
+        let mut state = test_state();
+        let project_id = state.selected_project().expect("project").id;
+        state.modal = Some(Modal::Input(SingleInputModal {
+            title: "Add todo".to_string(),
+            prompt: "Todo".to_string(),
+            value: String::new(),
+            purpose: InputPurpose::AddTodo(project_id),
+        }));
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('q')));
+
+        assert!(!state.should_quit());
+        match state.modal {
+            Some(Modal::Input(ref input)) => assert_eq!(input.value, "q"),
+            _ => panic!("expected input modal"),
+        }
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Esc));
+
+        assert!(state.modal.is_none());
+        assert_eq!(state.status, "Canceled");
+    }
+
+    #[test]
+    fn input_modal_keeps_shift_q_and_global_shortcuts_local() {
+        let mut state = test_state();
+        let project_id = state.selected_project().expect("project").id;
+        state.modal = Some(Modal::Input(SingleInputModal {
+            title: "Add todo".to_string(),
+            prompt: "Todo".to_string(),
+            value: String::new(),
+            purpose: InputPurpose::AddTodo(project_id),
+        }));
+
+        state.handle_key_event(KeyEvent::new(KeyCode::Char('Q'), KeyModifiers::SHIFT));
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('f')));
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('g')));
+
+        assert!(!state.should_quit());
+        assert!(state.take_pending_external_command().is_none());
+        match state.modal {
+            Some(Modal::Input(ref input)) => assert_eq!(input.value, "Qfg"),
+            _ => panic!("expected input modal"),
+        }
+    }
+
+    #[test]
+    fn global_quit_only_runs_in_normal_state() {
+        let mut state = test_state();
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('Q')));
+
+        assert!(state.should_quit());
+    }
+
+    #[test]
+    fn filter_mode_keeps_shift_q_and_global_shortcuts_local() {
+        let mut state = test_state();
+        state.filter_mode = true;
+
+        state.handle_key_event(KeyEvent::new(KeyCode::Char('Q'), KeyModifiers::SHIFT));
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('f')));
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('g')));
+
+        assert!(!state.should_quit());
+        assert!(state.take_pending_external_command().is_none());
+        assert_eq!(state.filter_input, "Qfg");
+    }
+
+    #[test]
+    fn help_overlay_blocks_global_quit_and_external_shortcuts() {
+        let mut state = test_state();
+        state.show_help = true;
+
+        state.handle_key_event(KeyEvent::new(KeyCode::Char('Q'), KeyModifiers::SHIFT));
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('g')));
+
+        assert!(!state.should_quit());
+        assert!(state.take_pending_external_command().is_none());
+        assert!(state.show_help);
     }
 
     #[test]
