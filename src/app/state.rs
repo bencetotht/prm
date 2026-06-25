@@ -817,7 +817,10 @@ impl AppState {
                 if let Some(project) = self.selected_project() {
                     self.modal = Some(Modal::Confirm(ConfirmModal {
                         title: "Delete project".to_string(),
-                        message: format!("Delete project '{}' and all todos?", project.name),
+                        message: format!(
+                            "Delete '{}' from prm and remove its registered todos?",
+                            project.name
+                        ),
                         action: ConfirmAction::DeleteProject(project.id),
                     }));
                 }
@@ -1363,8 +1366,8 @@ mod tests {
     use crate::db::repo::Repository;
 
     use super::{
-        AddProjectField, AddProjectModal, AppState, DB_REFRESH_INTERVAL, ExternalCommand,
-        FocusPane, Modal, PaneAreas,
+        AddProjectField, AddProjectModal, AppState, ConfirmAction, DB_REFRESH_INTERVAL,
+        ExternalCommand, FocusPane, Modal, PaneAreas,
     };
 
     fn test_state() -> AppState {
@@ -1404,6 +1407,51 @@ mod tests {
         state.handle_key_event(KeyEvent::from(KeyCode::Char('A')));
         assert_eq!(state.project_count(), 1);
         assert_eq!(state.selected_project().expect("project").id, project_id);
+    }
+
+    #[test]
+    fn project_delete_shortcut_opens_confirmation_without_deleting() {
+        let mut state = test_state();
+        let project_id = state.selected_project().expect("project").id;
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('d')));
+
+        assert_eq!(state.project_count(), 1);
+        match state.modal {
+            Some(Modal::Confirm(ref confirm)) => {
+                assert_eq!(confirm.title, "Delete project");
+                assert!(confirm.message.contains("demo"));
+                assert!(matches!(
+                    confirm.action,
+                    ConfirmAction::DeleteProject(id) if id == project_id
+                ));
+            }
+            _ => panic!("expected delete-project confirmation modal"),
+        }
+    }
+
+    #[test]
+    fn project_delete_confirmation_can_be_canceled() {
+        let mut state = test_state();
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('d')));
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('n')));
+
+        assert_eq!(state.project_count(), 1);
+        assert!(state.modal.is_none());
+        assert_eq!(state.status, "Canceled");
+    }
+
+    #[test]
+    fn project_delete_confirmation_deletes_after_acceptance() {
+        let mut state = test_state();
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('d')));
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('y')));
+
+        assert_eq!(state.project_count(), 0);
+        assert!(state.modal.is_none());
+        assert_eq!(state.status, "Deleted project");
     }
 
     #[test]
