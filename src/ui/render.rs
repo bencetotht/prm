@@ -13,6 +13,53 @@ use crate::ui::widgets::pane_block;
 const TODO_HIGHLIGHT_SYMBOL: &str = "▌ ";
 const TODO_ELLIPSIS: &str = "...";
 const INPUT_TRUNCATION_MARKER: &str = "<";
+const TODO_KEYWORD_HIGHLIGHT_CONFIG: TodoKeywordHighlightConfig = TodoKeywordHighlightConfig {
+    enabled: true,
+    rules: &[
+        TodoKeywordHighlightRule {
+            keyword: "feat",
+            color: theme::KeywordHighlightColor::Green,
+        },
+        TodoKeywordHighlightRule {
+            keyword: "fix",
+            color: theme::KeywordHighlightColor::Red,
+        },
+        TodoKeywordHighlightRule {
+            keyword: "chore",
+            color: theme::KeywordHighlightColor::Yellow,
+        },
+        TodoKeywordHighlightRule {
+            keyword: "docs",
+            color: theme::KeywordHighlightColor::Blue,
+        },
+        TodoKeywordHighlightRule {
+            keyword: "refactor",
+            color: theme::KeywordHighlightColor::Magenta,
+        },
+        TodoKeywordHighlightRule {
+            keyword: "test",
+            color: theme::KeywordHighlightColor::Cyan,
+        },
+    ],
+};
+
+#[derive(Debug, Clone, Copy)]
+struct TodoKeywordHighlightConfig {
+    enabled: bool,
+    rules: &'static [TodoKeywordHighlightRule],
+}
+
+#[derive(Debug, Clone, Copy)]
+struct TodoKeywordHighlightRule {
+    keyword: &'static str,
+    color: theme::KeywordHighlightColor,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TodoKeywordMatch {
+    end: usize,
+    color: theme::KeywordHighlightColor,
+}
 
 pub fn render(frame: &mut Frame<'_>, app: &mut AppState) {
     let (panes, footer) = split_main(frame.area());
@@ -149,7 +196,7 @@ fn render_todos(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
             } else {
                 Style::default()
             };
-            ListItem::new(Line::styled(format!("{prefix}{title}"), style))
+            ListItem::new(todo_line(prefix, title, style, todo.done))
         })
         .collect::<Vec<_>>();
 
@@ -161,6 +208,75 @@ fn render_todos(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     let mut state = ListState::default();
     state.select(Some(app.selected_todo));
     frame.render_stateful_widget(list, area, &mut state);
+}
+
+fn todo_line(prefix: String, title: String, base_style: Style, done: bool) -> Line<'static> {
+    let mut spans = vec![Span::styled(prefix, base_style)];
+    spans.extend(todo_title_spans(
+        &title,
+        base_style,
+        done,
+        &TODO_KEYWORD_HIGHLIGHT_CONFIG,
+    ));
+    Line::from(spans)
+}
+
+fn todo_title_spans(
+    title: &str,
+    base_style: Style,
+    done: bool,
+    config: &TodoKeywordHighlightConfig,
+) -> Vec<Span<'static>> {
+    if done {
+        return vec![Span::styled(title.to_string(), base_style)];
+    }
+
+    let Some(keyword_match) = todo_keyword_match(title, config) else {
+        return vec![Span::styled(title.to_string(), base_style)];
+    };
+
+    let (keyword, rest) = title.split_at(keyword_match.end);
+    vec![
+        Span::styled(
+            keyword.to_string(),
+            theme::todo_keyword_style(keyword_match.color),
+        ),
+        Span::styled(rest.to_string(), base_style),
+    ]
+}
+
+fn todo_keyword_match(
+    title: &str,
+    config: &TodoKeywordHighlightConfig,
+) -> Option<TodoKeywordMatch> {
+    if !config.enabled {
+        return None;
+    }
+
+    config.rules.iter().find_map(|rule| {
+        let end = rule.keyword.len();
+        let matched = title
+            .get(..end)
+            .is_some_and(|prefix| prefix.eq_ignore_ascii_case(rule.keyword));
+        if !matched || !has_semantic_keyword_boundary(title, end) {
+            return None;
+        }
+
+        Some(TodoKeywordMatch {
+            end,
+            color: rule.color,
+        })
+    })
+}
+
+fn has_semantic_keyword_boundary(title: &str, keyword_end: usize) -> bool {
+    match title
+        .get(keyword_end..)
+        .and_then(|suffix| suffix.chars().next())
+    {
+        Some(':') | Some('(') => true,
+        _ => false,
+    }
 }
 
 fn truncate_with_ellipsis(text: &str, max_width: usize) -> String {
@@ -702,7 +818,30 @@ fn render_modal_hint(frame: &mut Frame<'_>, area: Rect, text: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{project_active_todo_count_prefix, truncate_with_ellipsis};
+    use crate::ui::theme;
+
+    use super::{
+        TodoKeywordHighlightConfig, TodoKeywordHighlightRule, TodoKeywordMatch,
+        project_active_todo_count_prefix, todo_keyword_match, truncate_with_ellipsis,
+    };
+
+    const TEST_HIGHLIGHT_CONFIG: TodoKeywordHighlightConfig = TodoKeywordHighlightConfig {
+        enabled: true,
+        rules: &[
+            TodoKeywordHighlightRule {
+                keyword: "feat",
+                color: theme::KeywordHighlightColor::Green,
+            },
+            TodoKeywordHighlightRule {
+                keyword: "fix",
+                color: theme::KeywordHighlightColor::Red,
+            },
+            TodoKeywordHighlightRule {
+                keyword: "chore",
+                color: theme::KeywordHighlightColor::Yellow,
+            },
+        ],
+    };
 
     #[test]
     fn project_active_todo_count_prefix_caps_after_single_digits() {
@@ -732,5 +871,67 @@ mod tests {
     #[test]
     fn truncate_with_ellipsis_respects_wide_char_width() {
         assert_eq!(truncate_with_ellipsis("ab你好cd", 6), "ab...");
+    }
+
+    #[test]
+    fn todo_keyword_match_accepts_semantic_commit_prefixes() {
+        assert_eq!(
+            todo_keyword_match("feat(core): add indexed search", &TEST_HIGHLIGHT_CONFIG),
+            Some(TodoKeywordMatch {
+                end: 4,
+                color: theme::KeywordHighlightColor::Green,
+            })
+        );
+        assert_eq!(
+            todo_keyword_match("fix: prevent empty input", &TEST_HIGHLIGHT_CONFIG),
+            Some(TodoKeywordMatch {
+                end: 3,
+                color: theme::KeywordHighlightColor::Red,
+            })
+        );
+        assert_eq!(
+            todo_keyword_match("chore(updated)", &TEST_HIGHLIGHT_CONFIG),
+            Some(TodoKeywordMatch {
+                end: 5,
+                color: theme::KeywordHighlightColor::Yellow,
+            })
+        );
+    }
+
+    #[test]
+    fn todo_keyword_match_is_case_insensitive() {
+        assert_eq!(
+            todo_keyword_match("FEAT(ui): polish list", &TEST_HIGHLIGHT_CONFIG),
+            Some(TodoKeywordMatch {
+                end: 4,
+                color: theme::KeywordHighlightColor::Green,
+            })
+        );
+    }
+
+    #[test]
+    fn todo_keyword_match_avoids_non_semantic_prefixes() {
+        assert_eq!(
+            todo_keyword_match("feature: add indexed search", &TEST_HIGHLIGHT_CONFIG),
+            None
+        );
+        assert_eq!(
+            todo_keyword_match("prefix feat(core): later", &TEST_HIGHLIGHT_CONFIG),
+            None
+        );
+        assert_eq!(
+            todo_keyword_match("feat add indexed search", &TEST_HIGHLIGHT_CONFIG),
+            None
+        );
+    }
+
+    #[test]
+    fn todo_keyword_match_can_be_disabled_from_config() {
+        let config = TodoKeywordHighlightConfig {
+            enabled: false,
+            rules: TEST_HIGHLIGHT_CONFIG.rules,
+        };
+
+        assert_eq!(todo_keyword_match("feat(core): hidden", &config), None);
     }
 }

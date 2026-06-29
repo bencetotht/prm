@@ -10,6 +10,29 @@ enum ThemeMode {
     Monochrome,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum KeywordHighlightColor {
+    Blue,
+    Cyan,
+    Green,
+    Magenta,
+    Red,
+    Yellow,
+}
+
+impl KeywordHighlightColor {
+    fn terminal_color(self) -> Color {
+        match self {
+            Self::Blue => Color::Blue,
+            Self::Cyan => Color::Cyan,
+            Self::Green => Color::Green,
+            Self::Magenta => Color::Magenta,
+            Self::Red => Color::Red,
+            Self::Yellow => Color::Yellow,
+        }
+    }
+}
+
 fn theme_mode() -> ThemeMode {
     static MODE: OnceLock<ThemeMode> = OnceLock::new();
     *MODE.get_or_init(detect_theme_mode)
@@ -164,6 +187,15 @@ pub fn done_todo_style() -> Style {
     style_with_fallback(
         Style::default().fg(Color::Gray),
         Style::default().add_modifier(Modifier::DIM),
+    )
+}
+
+pub fn todo_keyword_style(color: KeywordHighlightColor) -> Style {
+    style_with_fallback(
+        Style::default()
+            .fg(color.terminal_color())
+            .add_modifier(Modifier::BOLD),
+        Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
     )
 }
 
