@@ -129,18 +129,18 @@ Current example:
 
 <!-- release-download-example:start -->
 ```bash
-curl -fsSL https://github.com/bencetotht/prm/releases/download/v1.0.8/prm-v1.0.8-macos-arm64.tar.gz -o prm.tar.gz
+curl -fsSL https://github.com/bencetotht/prm/releases/download/v1.1.0/prm-v1.1.0-macos-arm64.tar.gz -o prm.tar.gz
 tar -xzf prm.tar.gz
-install "./prm-1.0.8-macos-arm64/prm" /usr/local/bin/prm
+install "./prm-1.1.0-macos-arm64/prm" /usr/local/bin/prm
 ```
 <!-- release-download-example:end -->
 
 Release artifacts:
 
 <!-- release-assets:start -->
-- `prm-v1.0.8-linux-x86_64.tar.gz`
-- `prm-v1.0.8-macos-arm64.tar.gz`
-- `prm-v1.0.8-checksums.txt`
+- `prm-v1.1.0-linux-x86_64.tar.gz`
+- `prm-v1.1.0-macos-arm64.tar.gz`
+- `prm-v1.1.0-checksums.txt`
 <!-- release-assets:end -->
 
 ### Install via Nix flake
