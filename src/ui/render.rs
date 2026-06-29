@@ -12,6 +12,7 @@ use crate::ui::widgets::pane_block;
 
 const TODO_HIGHLIGHT_SYMBOL: &str = "▌ ";
 const TODO_ELLIPSIS: &str = "...";
+const INPUT_TRUNCATION_MARKER: &str = "<";
 
 pub fn render(frame: &mut Frame<'_>, app: &mut AppState) {
     let (panes, footer) = split_main(frame.area());
@@ -41,11 +42,17 @@ fn render_projects(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     let block = pane_block(title, app.focus == FocusPane::Projects);
 
     if app.projects.is_empty() {
-        let text = vec![
-            Line::from("No projects found"),
-            Line::from("Use: prm add ."),
-            Line::from("or press a in this pane"),
-        ];
+        let text = if app.filter_input.trim().is_empty() {
+            vec![
+                Line::styled("No projects found", theme::header_style()),
+                Line::from("Use `prm add .` or press `a` in this pane."),
+            ]
+        } else {
+            vec![
+                Line::styled("No projects match the filter", theme::header_style()),
+                Line::from("Edit the filter below, or press Esc to close it."),
+            ]
+        };
         let widget = Paragraph::new(text).block(block).wrap(Wrap { trim: false });
         frame.render_widget(widget, area);
         return;
@@ -63,7 +70,7 @@ fn render_projects(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
                 Span::raw(format!("{marker} ")),
                 Span::styled(
                     project_active_todo_count_prefix(active_todo_count),
-                    theme::muted_style(),
+                    theme::count_style(),
                 ),
                 Span::styled(
                     format!("[{}]", git_status.short_label()),
@@ -118,7 +125,10 @@ fn render_todos(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
     let list_width = block.inner(area).width as usize;
 
     if app.todos.is_empty() {
-        let text = vec![Line::from("No todos"), Line::from("Press n to add one")];
+        let text = vec![
+            Line::styled("No todos", theme::header_style()),
+            Line::from("Press `n` to add one."),
+        ];
         let widget = Paragraph::new(text).block(block).wrap(Wrap { trim: false });
         frame.render_widget(widget, area);
         return;
@@ -181,7 +191,8 @@ fn truncate_with_ellipsis(text: &str, max_width: usize) -> String {
 }
 
 fn render_agents(frame: &mut Frame<'_>, app: &mut AppState, area: Rect) {
-    let block = pane_block("[3] AGENTS.md", app.focus == FocusPane::Agents);
+    let title = scrolled_title("[3] AGENTS.md", app.agents_scroll);
+    let block = pane_block(&title, app.focus == FocusPane::Agents);
 
     let body = match app.current_agents_content() {
         AgentsContent::Missing => "No AGENTS.md found".to_string(),
@@ -198,7 +209,8 @@ fn render_agents(frame: &mut Frame<'_>, app: &mut AppState, area: Rect) {
 }
 
 fn render_git_history(frame: &mut Frame<'_>, app: &mut AppState, area: Rect) {
-    let block = pane_block("[4] Git history", app.focus == FocusPane::GitHistory);
+    let title = scrolled_title("[4] Git history", app.git_history_scroll);
+    let block = pane_block(&title, app.focus == FocusPane::GitHistory);
     let mut body = match app.current_git_history() {
         GitHistory::NotGit => vec![Line::from("Not a git repository")],
         GitHistory::Empty => vec![Line::from("No commits yet")],
@@ -232,21 +244,231 @@ fn render_git_history(frame: &mut Frame<'_>, app: &mut AppState, area: Rect) {
     frame.render_widget(paragraph, area);
 }
 
-fn render_footer(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
-    let content = if app.filter_mode {
-        format!("Filter: {}", app.filter_input)
+fn scrolled_title(title: &str, scroll: u16) -> String {
+    if scroll == 0 {
+        title.to_string()
     } else {
-        format!(
-            "{} | arrows/hjkl move | Tab panes | f fetch | g lazygit | t terminal | a/r/x/d project | n/e/space/dd todo | ? help | Q quit",
-            app.status
-        )
+        format!("{title} +{scroll}")
+    }
+}
+
+fn render_footer(frame: &mut Frame<'_>, app: &AppState, area: Rect) {
+    if app.filter_mode {
+        render_input_field(
+            frame,
+            area,
+            "Filter projects - Enter apply, Esc cancel",
+            &app.filter_input,
+            app.filter_cursor,
+            true,
+            "",
+        );
+        return;
+    }
+
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Length(1),
+        ])
+        .split(area);
+
+    let status = Paragraph::new(Line::from(vec![
+        Span::styled("Status ", theme::muted_style()),
+        Span::styled(app.status.as_str(), theme::status_style()),
+    ]))
+    .wrap(Wrap { trim: true });
+    frame.render_widget(status, rows[0]);
+
+    let shortcuts = Paragraph::new(shortcut_line(app))
+        .style(theme::help_style())
+        .wrap(Wrap { trim: true });
+    frame.render_widget(shortcuts, rows[1]);
+
+    let global = Paragraph::new(Line::from(vec![
+        key_span("Tab"),
+        Span::raw(" panes  "),
+        key_span("?"),
+        Span::raw(" help  "),
+        key_span("/"),
+        Span::raw(" filter  "),
+        key_span("f"),
+        Span::raw(" fetch  "),
+        key_span("Q"),
+        Span::raw(" quit"),
+    ]))
+    .style(theme::help_style())
+    .wrap(Wrap { trim: true });
+    frame.render_widget(global, rows[2]);
+}
+
+fn shortcut_line(app: &AppState) -> Line<'static> {
+    match app.focus {
+        FocusPane::Projects => Line::from(vec![
+            Span::styled("Projects ", theme::muted_style()),
+            key_span("a"),
+            Span::raw(" add  "),
+            key_span("r"),
+            Span::raw(" rename  "),
+            key_span("x"),
+            Span::raw(" archive  "),
+            key_span("d"),
+            Span::raw(" delete  "),
+            key_span("A"),
+            Span::raw(" archived  "),
+            key_span("m"),
+            Span::raw(" todo source  "),
+            key_span("g"),
+            Span::raw(" lazygit  "),
+            key_span("t"),
+            Span::raw(" terminal"),
+        ]),
+        FocusPane::Todos => Line::from(vec![
+            Span::styled("Todos ", theme::muted_style()),
+            key_span("n"),
+            Span::raw(" add  "),
+            key_span("e/Enter"),
+            Span::raw(" edit  "),
+            key_span("Space"),
+            Span::raw(" done  "),
+            key_span("dd"),
+            Span::raw(" delete  "),
+            key_span("J/K"),
+            Span::raw(" reorder"),
+        ]),
+        FocusPane::Agents => Line::from(vec![
+            Span::styled("AGENTS.md ", theme::muted_style()),
+            key_span("j/k"),
+            Span::raw(" scroll  "),
+            key_span("Up/Down"),
+            Span::raw(" scroll  "),
+            key_span("mouse wheel"),
+            Span::raw(" scroll"),
+        ]),
+        FocusPane::GitHistory => Line::from(vec![
+            Span::styled("Git history ", theme::muted_style()),
+            key_span("j/k"),
+            Span::raw(" scroll  "),
+            key_span("Up/Down"),
+            Span::raw(" scroll  "),
+            key_span("g"),
+            Span::raw(" lazygit"),
+        ]),
+    }
+}
+
+fn key_span(key: &'static str) -> Span<'static> {
+    Span::styled(key, theme::shortcut_style())
+}
+
+fn render_input_field(
+    frame: &mut Frame<'_>,
+    area: Rect,
+    label: &str,
+    value: &str,
+    cursor: usize,
+    active: bool,
+    hint: &str,
+) {
+    let border_style = if active {
+        theme::active_field_border_style()
+    } else {
+        theme::inactive_field_border_style()
+    };
+    let block = Block::bordered()
+        .title(label.to_string())
+        .title_style(theme::pane_title_style(active))
+        .border_style(border_style);
+    let inner = block.inner(area);
+    let edit_width = inner.width.saturating_sub(1) as usize;
+    let (display_value, cursor_width) = input_view(value, cursor, edit_width);
+
+    let content = if hint.is_empty() {
+        vec![Line::styled(
+            display_value,
+            theme::input_value_style(active),
+        )]
+    } else {
+        vec![
+            Line::styled(display_value, theme::input_value_style(active)),
+            Line::styled(hint.to_string(), theme::muted_style()),
+        ]
     };
 
     let paragraph = Paragraph::new(content)
-        .style(theme::status_style())
-        .wrap(Wrap { trim: true })
-        .block(Block::default());
+        .block(block)
+        .wrap(Wrap { trim: false });
     frame.render_widget(paragraph, area);
+
+    if active && inner.height > 0 && inner.width > 0 {
+        let cursor_x = inner
+            .x
+            .saturating_add(cursor_width.min(usize::from(inner.width.saturating_sub(1))) as u16);
+        frame.set_cursor_position(Position {
+            x: cursor_x,
+            y: inner.y,
+        });
+    }
+}
+
+fn input_view(value: &str, cursor: usize, max_width: usize) -> (String, usize) {
+    if max_width == 0 {
+        return (String::new(), 0);
+    }
+
+    let cursor = clamp_cursor(value, cursor);
+    if value.width() <= max_width {
+        return (value.to_string(), value[..cursor].width());
+    }
+
+    let before = &value[..cursor];
+    let after = &value[cursor..];
+    let marker_width = INPUT_TRUNCATION_MARKER.width();
+    let mut before_chars = Vec::new();
+    let mut before_width = 0;
+    let before_limit = max_width.saturating_sub(marker_width);
+
+    for ch in before.chars().rev() {
+        let ch_width = ch.width().unwrap_or(0);
+        if before_width + ch_width > before_limit {
+            break;
+        }
+        before_width += ch_width;
+        before_chars.push(ch);
+    }
+    before_chars.reverse();
+
+    let truncated_before = before.width() > before_width;
+    let mut display = String::new();
+    if truncated_before && marker_width <= max_width {
+        display.push_str(INPUT_TRUNCATION_MARKER);
+    }
+    for ch in before_chars {
+        display.push(ch);
+    }
+
+    let cursor_width = display.width();
+    let mut used_width = cursor_width;
+    for ch in after.chars() {
+        let ch_width = ch.width().unwrap_or(0);
+        if used_width + ch_width > max_width {
+            break;
+        }
+        used_width += ch_width;
+        display.push(ch);
+    }
+
+    (display, cursor_width)
+}
+
+fn clamp_cursor(value: &str, cursor: usize) -> usize {
+    let mut cursor = cursor.min(value.len());
+    while cursor > 0 && !value.is_char_boundary(cursor) {
+        cursor -= 1;
+    }
+    cursor
 }
 
 fn render_help_overlay(frame: &mut Frame<'_>, app: &AppState) {
@@ -263,54 +485,78 @@ fn render_help_overlay(frame: &mut Frame<'_>, app: &AppState) {
         Line::styled("PRM Keymap", theme::header_style()),
         Line::from(""),
         Line::styled("Navigation", theme::header_style()),
-        Line::from("1/2/3/4 jump to a pane by number"),
-        Line::from("Tab/Shift-Tab or Left/Right switch pane focus"),
-        Line::from("Up/Down or j/k move list selection or scroll focused text panes"),
-        Line::from("Mouse: left click focuses/selects; wheel scrolls the pane under cursor"),
+        help_row("1/2/3/4", "jump to a pane by number"),
+        help_row("Tab/Shift-Tab", "switch pane focus"),
+        help_row("Left/Right or h/l", "switch pane focus"),
+        help_row(
+            "Up/Down or j/k",
+            "move selection or scroll focused text panes",
+        ),
+        help_row("Mouse", "click focuses/selects; wheel scrolls under cursor"),
         Line::from(""),
         Line::styled("Refresh", theme::header_style()),
-        Line::from("Database auto-refresh checks external changes every 2 seconds"),
-        Line::from("Git status/history auto-refresh runs every 60 seconds"),
-        Line::from("Press f to fetch immediately (database + git + pane caches)"),
+        help_row(
+            "auto",
+            "database checks every 2s; git refresh runs every 60s",
+        ),
+        help_row("f", "fetch immediately: database, git, and pane caches"),
         Line::from(""),
         Line::styled("Global", theme::header_style()),
-        Line::from("/ filter projects by name/path (Enter apply, Esc cancel)"),
-        Line::from("g opens lazygit for selected project (tmux popup when available)"),
-        Line::from("t opens a new tmux terminal window at selected project path"),
-        Line::from("? toggles this help dialog"),
-        Line::from("Q quits prm"),
+        help_row("/", "filter projects by name/path"),
+        help_row("g", "open lazygit for selected project"),
+        help_row(
+            "t",
+            "open a new project terminal tab/window via tmux or cmux",
+        ),
+        help_row("?", "toggle this help dialog"),
+        help_row("Q", "quit prm"),
         Line::from(""),
         Line::styled("Projects pane", theme::header_style()),
-        Line::from("a open add-project modal (path + optional name)"),
-        Line::from("r rename selected project"),
-        Line::from("x archive/unarchive selected project"),
-        Line::from("d delete selected project (confirmation modal)"),
-        Line::from("A toggle showing archived projects"),
-        Line::from("m toggle todo storage (database / TODO.md file)"),
-        Line::from("Dim suffix in project rows shows the latest reachable git tag"),
-        Line::from(
-            "Git badge legend: CHG changed, PUSH waiting to push, COMMIT local-only, OK synced",
+        help_row("a", "add project with path and optional name"),
+        help_row("r", "rename selected project"),
+        help_row("x", "archive or unarchive selected project"),
+        help_row("d", "delete selected project with confirmation"),
+        help_row("A", "toggle showing archived projects"),
+        help_row("m", "toggle todo storage: database or TODO.md file"),
+        help_row("tags", "dim project suffix shows latest reachable git tag"),
+        help_row(
+            "git",
+            "CHG changed; PUSH waiting; COMMIT local-only; OK synced",
         ),
         Line::from(""),
         Line::styled("Todos pane", theme::header_style()),
-        Line::from("n add todo, e/Enter edit todo, Space toggle done"),
-        Line::from("dd delete selected todo"),
-        Line::from("J/K reorder selected todo"),
+        help_row("n", "add todo"),
+        help_row("e/Enter", "edit selected todo"),
+        help_row("Space", "toggle done"),
+        help_row("dd", "delete selected todo"),
+        help_row("J/K", "reorder selected todo"),
+        Line::from(""),
+        Line::styled("Input fields", theme::header_style()),
+        help_row("Left/Right", "move cursor"),
+        help_row("Home/End", "jump to start or end"),
+        help_row("Backspace/Delete", "remove text around cursor"),
+        help_row("Enter/Esc", "submit or cancel"),
         Line::from(""),
         Line::styled("Text panes", theme::header_style()),
-        Line::from("[3] AGENTS.md and [4] Git history support keyboard + mouse scrolling"),
-        Line::from("[4] also shows nearest release tag and commit distance from that tag"),
+        help_row(
+            "[3]/[4]",
+            "AGENTS.md and Git history support keyboard and mouse scrolling",
+        ),
+        help_row("[4]", "shows nearest release tag and commit distance"),
         Line::from(""),
         Line::styled("Build Info", theme::header_style()),
         Line::from(metadata),
         Line::from(meta::copyright_line()),
-        Line::from("Scroll: j/k, arrows, PgUp/PgDn, mouse wheel | Close: Esc, q, or ?"),
+        help_row(
+            "Esc/q/?",
+            "close help; scroll with j/k, arrows, PgUp/PgDn, wheel",
+        ),
     ];
 
     let widget = Paragraph::new(lines)
         .block(
             Block::bordered()
-                .title("Help")
+                .title(scrolled_title("Help", app.help_scroll))
                 .title_style(theme::header_style())
                 .border_style(theme::focus_border_style()),
         )
@@ -321,71 +567,116 @@ fn render_help_overlay(frame: &mut Frame<'_>, app: &AppState) {
     frame.render_widget(widget, area);
 }
 
+fn help_row(key: &'static str, action: &'static str) -> Line<'static> {
+    Line::from(vec![
+        Span::raw("  "),
+        Span::styled(format!("{key:<18}"), theme::shortcut_style()),
+        Span::raw(action),
+    ])
+}
+
 fn render_modal(frame: &mut Frame<'_>, modal: Modal) {
     match modal {
         Modal::Input(input) => {
-            let area = centered_rect(60, 30, frame.area());
+            let area = centered_rect(62, 30, frame.area());
             frame.render_widget(Clear, area);
 
-            let lines = vec![
-                Line::styled(input.title, theme::header_style()),
-                Line::from(""),
-                Line::from(format!("{}: {}", input.prompt, input.value)),
-                Line::from("Enter submit | Esc cancel"),
-            ];
+            let block = Block::bordered()
+                .title("Input")
+                .title_style(theme::header_style())
+                .border_style(theme::focus_border_style());
+            let inner = block.inner(area);
+            frame.render_widget(block, area);
 
-            let widget = Paragraph::new(lines)
-                .block(
-                    Block::bordered()
-                        .title("Input")
-                        .border_style(theme::focus_border_style()),
-                )
-                .wrap(Wrap { trim: false });
-            frame.render_widget(widget, area);
+            let rows = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(1),
+                    Constraint::Length(1),
+                    Constraint::Length(3),
+                    Constraint::Min(1),
+                    Constraint::Length(1),
+                ])
+                .split(inner);
+
+            frame.render_widget(
+                Paragraph::new(input.title).style(theme::header_style()),
+                rows[0],
+            );
+            render_input_field(
+                frame,
+                rows[2],
+                &input.prompt,
+                &input.value,
+                input.cursor,
+                true,
+                "",
+            );
+            render_modal_hint(frame, rows[4], "Enter submit | Esc cancel");
         }
         Modal::AddProject(add) => {
-            let area = centered_rect(70, 36, frame.area());
+            let area = centered_rect(72, 40, frame.area());
             frame.render_widget(Clear, area);
 
-            let path_prefix = if add.active_field == AddProjectField::Path {
-                ">"
-            } else {
-                " "
-            };
-            let name_prefix = if add.active_field == AddProjectField::Name {
-                ">"
-            } else {
-                " "
-            };
+            let block = Block::bordered()
+                .title("Project")
+                .title_style(theme::header_style())
+                .border_style(theme::focus_border_style());
+            let inner = block.inner(area);
+            frame.render_widget(block, area);
 
-            let lines = vec![
-                Line::styled("Add project", theme::header_style()),
-                Line::from(""),
-                Line::from(format!("{path_prefix} Path: {}", add.path)),
-                Line::from(format!("{name_prefix} Name (optional): {}", add.name)),
-                Line::from("Tab switch field | Enter submit | Esc cancel"),
-            ];
+            let rows = Layout::default()
+                .direction(Direction::Vertical)
+                .constraints([
+                    Constraint::Length(1),
+                    Constraint::Length(1),
+                    Constraint::Length(3),
+                    Constraint::Length(1),
+                    Constraint::Length(3),
+                    Constraint::Min(1),
+                    Constraint::Length(1),
+                ])
+                .split(inner);
 
-            let widget = Paragraph::new(lines)
-                .block(
-                    Block::bordered()
-                        .title("Project")
-                        .border_style(theme::focus_border_style()),
-                )
-                .wrap(Wrap { trim: false });
-
-            frame.render_widget(widget, area);
+            frame.render_widget(
+                Paragraph::new("Add project").style(theme::header_style()),
+                rows[0],
+            );
+            render_input_field(
+                frame,
+                rows[2],
+                "Path",
+                &add.path,
+                add.path_cursor,
+                add.active_field == AddProjectField::Path,
+                "",
+            );
+            render_input_field(
+                frame,
+                rows[4],
+                "Name (optional)",
+                &add.name,
+                add.name_cursor,
+                add.active_field == AddProjectField::Name,
+                "",
+            );
+            render_modal_hint(frame, rows[6], "Tab field | Enter submit | Esc cancel");
         }
         Modal::Confirm(confirm) => {
             let area = centered_rect(60, 26, frame.area());
             frame.render_widget(Clear, area);
 
             let lines = vec![
-                Line::styled(confirm.title, theme::header_style()),
+                Line::styled(confirm.title, theme::danger_style()),
                 Line::from(""),
                 Line::from(confirm.message),
                 Line::from(""),
-                Line::from("Enter/Y confirm | N/Esc cancel"),
+                Line::from(vec![
+                    key_span("Enter/Y"),
+                    Span::raw(" confirm  "),
+                    key_span("N/Esc"),
+                    Span::raw(" cancel"),
+                ]),
             ];
 
             let widget = Paragraph::new(lines)
@@ -398,6 +689,15 @@ fn render_modal(frame: &mut Frame<'_>, modal: Modal) {
             frame.render_widget(widget, area);
         }
     }
+}
+
+fn render_modal_hint(frame: &mut Frame<'_>, area: Rect, text: &str) {
+    frame.render_widget(
+        Paragraph::new(text.to_string())
+            .style(theme::muted_style())
+            .wrap(Wrap { trim: true }),
+        area,
+    );
 }
 
 #[cfg(test)]

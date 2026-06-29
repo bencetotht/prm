@@ -51,6 +51,7 @@ pub struct SingleInputModal {
     pub title: String,
     pub prompt: String,
     pub value: String,
+    pub cursor: usize,
     pub purpose: InputPurpose,
 }
 
@@ -71,6 +72,8 @@ pub enum AddProjectField {
 pub struct AddProjectModal {
     pub path: String,
     pub name: String,
+    pub path_cursor: usize,
+    pub name_cursor: usize,
     pub active_field: AddProjectField,
 }
 
@@ -92,7 +95,7 @@ pub enum ExternalCommand {
     OpenLazyGit {
         project_path: String,
     },
-    OpenTmuxTerminal {
+    OpenProjectTerminal {
         project_path: String,
         project_name: String,
     },
@@ -116,6 +119,7 @@ pub struct AppState {
     pub(crate) show_archived: bool,
     pub(crate) filter_mode: bool,
     pub(crate) filter_input: String,
+    pub(crate) filter_cursor: usize,
     pub(crate) show_help: bool,
     pub(crate) help_scroll: u16,
     pub(crate) status: String,
@@ -150,6 +154,7 @@ impl AppState {
             show_archived: false,
             filter_mode: false,
             filter_input: String::new(),
+            filter_cursor: 0,
             show_help: false,
             help_scroll: 0,
             status: String::from("Ready"),
@@ -377,6 +382,8 @@ impl AppState {
                     self.modal = Some(Modal::AddProject(AddProjectModal {
                         path: String::new(),
                         name: String::new(),
+                        path_cursor: 0,
+                        name_cursor: 0,
                         active_field: AddProjectField::Path,
                     }));
                 }
@@ -389,6 +396,7 @@ impl AppState {
                         title: "Rename project".to_string(),
                         prompt: "Name".to_string(),
                         value: project.name.clone(),
+                        cursor: project.name.len(),
                         purpose: InputPurpose::RenameProject(project.id),
                     }));
                 }
@@ -436,6 +444,7 @@ impl AppState {
                         title: "Add todo".to_string(),
                         prompt: "Todo".to_string(),
                         value: String::new(),
+                        cursor: 0,
                         purpose: InputPurpose::AddTodo(project.id),
                     }));
                 }
@@ -448,6 +457,7 @@ impl AppState {
                         title: "Edit todo".to_string(),
                         prompt: "Todo".to_string(),
                         value: todo.title.clone(),
+                        cursor: todo.title.len(),
                         purpose: InputPurpose::EditTodo(todo.id),
                     }));
                 }
@@ -532,6 +542,8 @@ impl AppState {
             return;
         };
 
+        normalize_modal_cursors(&mut modal);
+
         match &mut modal {
             Modal::Input(input) => match key.code {
                 KeyCode::Enter => {
@@ -542,12 +554,15 @@ impl AppState {
                     }
                     return;
                 }
-                KeyCode::Backspace => {
-                    input.value.pop();
-                }
+                KeyCode::Backspace => delete_before_cursor(&mut input.value, &mut input.cursor),
+                KeyCode::Delete => delete_at_cursor(&mut input.value, input.cursor),
+                KeyCode::Left => move_cursor_left(&input.value, &mut input.cursor),
+                KeyCode::Right => move_cursor_right(&input.value, &mut input.cursor),
+                KeyCode::Home => input.cursor = 0,
+                KeyCode::End => input.cursor = input.value.len(),
                 KeyCode::Char(ch) => {
                     if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT {
-                        input.value.push(ch);
+                        insert_at_cursor(&mut input.value, &mut input.cursor, ch);
                     }
                 }
                 _ => {}
@@ -561,11 +576,31 @@ impl AppState {
                 }
                 KeyCode::Backspace => match add.active_field {
                     AddProjectField::Path => {
-                        add.path.pop();
+                        delete_before_cursor(&mut add.path, &mut add.path_cursor)
                     }
                     AddProjectField::Name => {
-                        add.name.pop();
+                        delete_before_cursor(&mut add.name, &mut add.name_cursor)
                     }
+                },
+                KeyCode::Delete => match add.active_field {
+                    AddProjectField::Path => delete_at_cursor(&mut add.path, add.path_cursor),
+                    AddProjectField::Name => delete_at_cursor(&mut add.name, add.name_cursor),
+                },
+                KeyCode::Left => match add.active_field {
+                    AddProjectField::Path => move_cursor_left(&add.path, &mut add.path_cursor),
+                    AddProjectField::Name => move_cursor_left(&add.name, &mut add.name_cursor),
+                },
+                KeyCode::Right => match add.active_field {
+                    AddProjectField::Path => move_cursor_right(&add.path, &mut add.path_cursor),
+                    AddProjectField::Name => move_cursor_right(&add.name, &mut add.name_cursor),
+                },
+                KeyCode::Home => match add.active_field {
+                    AddProjectField::Path => add.path_cursor = 0,
+                    AddProjectField::Name => add.name_cursor = 0,
+                },
+                KeyCode::End => match add.active_field {
+                    AddProjectField::Path => add.path_cursor = add.path.len(),
+                    AddProjectField::Name => add.name_cursor = add.name.len(),
                 },
                 KeyCode::Enter => {
                     if let Err(err) = self.submit_add_project_modal(add.clone()) {
@@ -578,8 +613,12 @@ impl AppState {
                 KeyCode::Char(ch) => {
                     if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT {
                         match add.active_field {
-                            AddProjectField::Path => add.path.push(ch),
-                            AddProjectField::Name => add.name.push(ch),
+                            AddProjectField::Path => {
+                                insert_at_cursor(&mut add.path, &mut add.path_cursor, ch);
+                            }
+                            AddProjectField::Name => {
+                                insert_at_cursor(&mut add.name, &mut add.name_cursor, ch);
+                            }
                         }
                     }
                 }
@@ -642,14 +681,36 @@ impl AppState {
                 self.status = "Filter applied".to_string();
             }
             KeyCode::Backspace => {
-                self.filter_input.pop();
+                let mut cursor = self.filter_cursor;
+                delete_before_cursor(&mut self.filter_input, &mut cursor);
+                self.filter_cursor = cursor;
                 if let Err(err) = self.reload_projects() {
                     self.status = format!("Failed to apply filter: {err}");
                 }
             }
+            KeyCode::Delete => {
+                delete_at_cursor(&mut self.filter_input, self.filter_cursor);
+                if let Err(err) = self.reload_projects() {
+                    self.status = format!("Failed to apply filter: {err}");
+                }
+            }
+            KeyCode::Left => {
+                let mut cursor = self.filter_cursor;
+                move_cursor_left(&self.filter_input, &mut cursor);
+                self.filter_cursor = cursor;
+            }
+            KeyCode::Right => {
+                let mut cursor = self.filter_cursor;
+                move_cursor_right(&self.filter_input, &mut cursor);
+                self.filter_cursor = cursor;
+            }
+            KeyCode::Home => self.filter_cursor = 0,
+            KeyCode::End => self.filter_cursor = self.filter_input.len(),
             KeyCode::Char(ch) => {
                 if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT {
-                    self.filter_input.push(ch);
+                    let mut cursor = self.filter_cursor;
+                    insert_at_cursor(&mut self.filter_input, &mut cursor, ch);
+                    self.filter_cursor = cursor;
                     if let Err(err) = self.reload_projects() {
                         self.status = format!("Failed to apply filter: {err}");
                     }
@@ -784,7 +845,7 @@ impl AppState {
             return;
         };
 
-        self.pending_external_command = Some(ExternalCommand::OpenTmuxTerminal {
+        self.pending_external_command = Some(ExternalCommand::OpenProjectTerminal {
             project_path: project.path,
             project_name: project.name,
         });
@@ -1393,6 +1454,76 @@ fn pane_list_index(area: Rect, row: u16) -> Option<usize> {
     Some(usize::from(row.saturating_sub(list_start)))
 }
 
+fn normalize_modal_cursors(modal: &mut Modal) {
+    match modal {
+        Modal::Input(input) => {
+            input.cursor = clamp_cursor(&input.value, input.cursor);
+        }
+        Modal::AddProject(add) => {
+            add.path_cursor = clamp_cursor(&add.path, add.path_cursor);
+            add.name_cursor = clamp_cursor(&add.name, add.name_cursor);
+        }
+        Modal::Confirm(_) => {}
+    }
+}
+
+fn clamp_cursor(value: &str, cursor: usize) -> usize {
+    let mut cursor = cursor.min(value.len());
+    while cursor > 0 && !value.is_char_boundary(cursor) {
+        cursor -= 1;
+    }
+    cursor
+}
+
+fn insert_at_cursor(value: &mut String, cursor: &mut usize, ch: char) {
+    *cursor = clamp_cursor(value, *cursor);
+    value.insert(*cursor, ch);
+    *cursor += ch.len_utf8();
+}
+
+fn delete_before_cursor(value: &mut String, cursor: &mut usize) {
+    *cursor = clamp_cursor(value, *cursor);
+    if *cursor == 0 {
+        return;
+    }
+
+    let previous = value[..*cursor]
+        .char_indices()
+        .last()
+        .map(|(index, _)| index)
+        .unwrap_or(0);
+    value.replace_range(previous..*cursor, "");
+    *cursor = previous;
+}
+
+fn delete_at_cursor(value: &mut String, cursor: usize) {
+    let cursor = clamp_cursor(value, cursor);
+    let Some(ch) = value[cursor..].chars().next() else {
+        return;
+    };
+    value.replace_range(cursor..cursor + ch.len_utf8(), "");
+}
+
+fn move_cursor_left(value: &str, cursor: &mut usize) {
+    *cursor = clamp_cursor(value, *cursor);
+    if *cursor == 0 {
+        return;
+    }
+    *cursor = value[..*cursor]
+        .char_indices()
+        .last()
+        .map(|(index, _)| index)
+        .unwrap_or(0);
+}
+
+fn move_cursor_right(value: &str, cursor: &mut usize) {
+    *cursor = clamp_cursor(value, *cursor);
+    let Some(ch) = value[*cursor..].chars().next() else {
+        return;
+    };
+    *cursor += ch.len_utf8();
+}
+
 #[cfg(test)]
 mod tests {
     use std::time::Instant;
@@ -1710,6 +1841,8 @@ mod tests {
         state.modal = Some(Modal::AddProject(AddProjectModal {
             path: String::new(),
             name: String::new(),
+            path_cursor: 0,
+            name_cursor: 0,
             active_field: AddProjectField::Path,
         }));
 
@@ -1730,6 +1863,7 @@ mod tests {
             title: "Add todo".to_string(),
             prompt: "Todo".to_string(),
             value: String::new(),
+            cursor: 0,
             purpose: InputPurpose::AddTodo(project_id),
         }));
 
@@ -1755,6 +1889,7 @@ mod tests {
             title: "Add todo".to_string(),
             prompt: "Todo".to_string(),
             value: String::new(),
+            cursor: 0,
             purpose: InputPurpose::AddTodo(project_id),
         }));
 
@@ -1768,6 +1903,73 @@ mod tests {
             Some(Modal::Input(ref input)) => assert_eq!(input.value, "Qfg"),
             _ => panic!("expected input modal"),
         }
+    }
+
+    #[test]
+    fn input_modal_edits_at_cursor() {
+        let mut state = test_state();
+        let project_id = state.selected_project().expect("project").id;
+        state.modal = Some(Modal::Input(SingleInputModal {
+            title: "Add todo".to_string(),
+            prompt: "Todo".to_string(),
+            value: "ab".to_string(),
+            cursor: 1,
+            purpose: InputPurpose::AddTodo(project_id),
+        }));
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('é')));
+        state.handle_key_event(KeyEvent::from(KeyCode::Left));
+        state.handle_key_event(KeyEvent::from(KeyCode::Backspace));
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('z')));
+
+        match state.modal {
+            Some(Modal::Input(ref input)) => {
+                assert_eq!(input.value, "zéb");
+                assert_eq!(input.cursor, 1);
+            }
+            _ => panic!("expected input modal"),
+        }
+    }
+
+    #[test]
+    fn add_project_modal_tracks_cursor_per_field() {
+        let mut state = test_state();
+        state.modal = Some(Modal::AddProject(AddProjectModal {
+            path: "ac".to_string(),
+            name: "xz".to_string(),
+            path_cursor: 1,
+            name_cursor: 1,
+            active_field: AddProjectField::Path,
+        }));
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('b')));
+        state.handle_key_event(KeyEvent::from(KeyCode::Tab));
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('y')));
+
+        match state.modal {
+            Some(Modal::AddProject(ref add)) => {
+                assert_eq!(add.path, "abc");
+                assert_eq!(add.path_cursor, 2);
+                assert_eq!(add.name, "xyz");
+                assert_eq!(add.name_cursor, 2);
+            }
+            _ => panic!("expected add-project modal"),
+        }
+    }
+
+    #[test]
+    fn filter_mode_edits_at_cursor() {
+        let mut state = test_state();
+        state.filter_mode = true;
+        state.filter_input = "ac".to_string();
+        state.filter_cursor = 1;
+
+        state.handle_key_event(KeyEvent::from(KeyCode::Char('b')));
+        state.handle_key_event(KeyEvent::from(KeyCode::Left));
+        state.handle_key_event(KeyEvent::from(KeyCode::Delete));
+
+        assert_eq!(state.filter_input, "ac");
+        assert_eq!(state.filter_cursor, 1);
     }
 
     #[test]
@@ -1815,7 +2017,7 @@ mod tests {
 
         assert_eq!(
             state.take_pending_external_command(),
-            Some(ExternalCommand::OpenTmuxTerminal {
+            Some(ExternalCommand::OpenProjectTerminal {
                 project_path: selected_project.path,
                 project_name: selected_project.name,
             })
@@ -1849,6 +2051,8 @@ mod tests {
         state.modal = Some(Modal::AddProject(AddProjectModal {
             path: String::new(),
             name: String::new(),
+            path_cursor: 0,
+            name_cursor: 0,
             active_field: AddProjectField::Path,
         }));
 

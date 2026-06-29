@@ -33,6 +33,12 @@ enum LazyGitLaunchOutcome {
     },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum TerminalLaunchOutcome {
+    TmuxWindow { window_name: String },
+    CmuxSurface,
+}
+
 pub fn run_tui(mut app: AppState) -> Result<()> {
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -103,17 +109,15 @@ fn handle_external_command(
                 }
             }
         }
-        ExternalCommand::OpenTmuxTerminal {
+        ExternalCommand::OpenProjectTerminal {
             project_path,
             project_name,
         } => {
             let path = Path::new(&project_path);
-            match open_tmux_terminal_window(path, &project_name) {
-                Ok(window_name) => {
-                    app.status = format!("Opened tmux terminal window `{window_name}`");
-                }
+            match open_project_terminal(path, &project_name) {
+                Ok(outcome) => app.status = format_terminal_launch_status(outcome),
                 Err(err) => {
-                    app.status = format!("Failed to open tmux terminal: {err}");
+                    app.status = format!("Failed to open project terminal: {err}");
                 }
             }
         }
@@ -182,13 +186,25 @@ fn ensure_lazygit_available() -> Result<()> {
     }
 }
 
-fn open_tmux_terminal_window(project_path: &Path, project_name: &str) -> Result<String> {
-    if !has_tmux_session(std::env::var("TMUX").ok().as_deref()) {
-        return Err(anyhow!(
-            "not running inside tmux; terminal shortcut opens a tmux window"
-        ));
+fn open_project_terminal(project_path: &Path, project_name: &str) -> Result<TerminalLaunchOutcome> {
+    let tmux_env = std::env::var("TMUX").ok();
+    if has_tmux_session(tmux_env.as_deref()) {
+        return open_tmux_terminal_window(project_path, project_name)
+            .map(|window_name| TerminalLaunchOutcome::TmuxWindow { window_name });
     }
 
+    let cmux_workspace_id = std::env::var("CMUX_WORKSPACE_ID").ok();
+    if let Some(workspace_id) = active_cmux_workspace_id(cmux_workspace_id.as_deref()) {
+        open_cmux_terminal_surface(project_path, workspace_id)?;
+        return Ok(TerminalLaunchOutcome::CmuxSurface);
+    }
+
+    Err(anyhow!(
+        "not running inside tmux or cmux; terminal shortcut needs an active multiplexer"
+    ))
+}
+
+fn open_tmux_terminal_window(project_path: &Path, project_name: &str) -> Result<String> {
     let window_name = tmux_window_name(project_name);
     let output = Command::new("tmux")
         .arg("new-window")
@@ -217,11 +233,49 @@ fn open_tmux_terminal_window(project_path: &Path, project_name: &str) -> Result<
     }
 }
 
+fn open_cmux_terminal_surface(project_path: &Path, workspace_id: &str) -> Result<()> {
+    let output = Command::new("cmux")
+        .arg("new-surface")
+        .arg("--type")
+        .arg("terminal")
+        .arg("--workspace")
+        .arg(workspace_id)
+        .arg("--working-directory")
+        .arg(project_path)
+        .arg("--focus")
+        .arg("true")
+        .output()
+        .map_err(|err| {
+            if err.kind() == io::ErrorKind::NotFound {
+                anyhow!("cmux not found in PATH")
+            } else {
+                anyhow!("failed to run `cmux new-surface`: {err}")
+            }
+        })?;
+
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        if stderr.is_empty() {
+            Err(anyhow!("`cmux new-surface` exited with non-zero status"))
+        } else {
+            Err(anyhow!("`cmux new-surface` failed: {stderr}"))
+        }
+    }
+}
+
 fn has_tmux_session(tmux_env: Option<&str>) -> bool {
     match tmux_env.map(str::trim) {
         Some(value) => !value.is_empty(),
         None => false,
     }
+}
+
+fn active_cmux_workspace_id(cmux_workspace_id: Option<&str>) -> Option<&str> {
+    cmux_workspace_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
 }
 
 fn tmux_window_name(project_name: &str) -> String {
@@ -338,6 +392,15 @@ fn format_lazygit_status(outcome: LazyGitLaunchOutcome) -> String {
     }
 }
 
+fn format_terminal_launch_status(outcome: TerminalLaunchOutcome) -> String {
+    match outcome {
+        TerminalLaunchOutcome::TmuxWindow { window_name } => {
+            format!("Opened tmux terminal window `{window_name}`")
+        }
+        TerminalLaunchOutcome::CmuxSurface => "Opened cmux terminal tab".to_string(),
+    }
+}
+
 fn format_exit_status(status: ExitStatus) -> String {
     format_exit_code(status.code())
 }
@@ -363,7 +426,7 @@ fn build_pane_areas(size: ratatui::layout::Size) -> PaneAreas {
 #[cfg(test)]
 mod tests {
     use super::{
-        LazyGitLaunchStrategy, has_tmux_session, lazygit_launch_strategy,
+        LazyGitLaunchStrategy, active_cmux_workspace_id, has_tmux_session, lazygit_launch_strategy,
         should_fallback_to_fullscreen, tmux_window_name,
     };
 
@@ -395,6 +458,21 @@ mod tests {
         assert!(!has_tmux_session(Some("")));
         assert!(!has_tmux_session(Some("   ")));
         assert!(!has_tmux_session(None));
+    }
+
+    #[test]
+    fn cmux_workspace_detection_handles_empty_values() {
+        assert_eq!(
+            active_cmux_workspace_id(Some("workspace:1")),
+            Some("workspace:1")
+        );
+        assert_eq!(
+            active_cmux_workspace_id(Some(" workspace:2 ")),
+            Some("workspace:2")
+        );
+        assert_eq!(active_cmux_workspace_id(Some("")), None);
+        assert_eq!(active_cmux_workspace_id(Some("   ")), None);
+        assert_eq!(active_cmux_workspace_id(None), None);
     }
 
     #[test]

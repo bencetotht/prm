@@ -108,11 +108,55 @@ pub fn header_style() -> Style {
 
 pub fn selected_item_style() -> Style {
     style_with_fallback(
+        Style::default().add_modifier(Modifier::BOLD | Modifier::REVERSED),
+        Style::default().add_modifier(Modifier::BOLD | Modifier::REVERSED),
+    )
+}
+
+pub fn active_field_border_style() -> Style {
+    style_with_fallback(
         Style::default()
-            .fg(Color::White)
-            .bg(Color::DarkGray)
+            .fg(Color::Yellow)
             .add_modifier(Modifier::BOLD),
-        Style::default().add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
+        Style::default().add_modifier(Modifier::BOLD),
+    )
+}
+
+pub fn inactive_field_border_style() -> Style {
+    style_with_fallback(
+        Style::default().fg(Color::DarkGray),
+        Style::default().add_modifier(Modifier::DIM),
+    )
+}
+
+pub fn input_value_style(active: bool) -> Style {
+    if active {
+        style_with_fallback(Style::default().fg(Color::White), Style::default())
+    } else {
+        muted_style()
+    }
+}
+
+pub fn shortcut_style() -> Style {
+    style_with_fallback(
+        Style::default().fg(Color::Yellow),
+        Style::default().add_modifier(Modifier::BOLD),
+    )
+}
+
+pub fn danger_style() -> Style {
+    style_with_fallback(
+        Style::default().fg(Color::Red).add_modifier(Modifier::BOLD),
+        Style::default().add_modifier(Modifier::BOLD | Modifier::REVERSED),
+    )
+}
+
+pub fn count_style() -> Style {
+    style_with_fallback(
+        Style::default()
+            .fg(Color::Blue)
+            .add_modifier(Modifier::BOLD),
+        Style::default().add_modifier(Modifier::BOLD),
     )
 }
 

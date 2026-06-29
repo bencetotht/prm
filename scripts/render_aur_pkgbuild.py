@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import argparse
 import pathlib
-import tomllib
 from string import Template
+
+try:
+    import tomllib
+except ModuleNotFoundError:  # Python < 3.11, including the system Python on older macOS.
+    tomllib = None
 
 
 AUR_DESCRIPTION = "Terminal project repository manager."
@@ -46,11 +50,36 @@ def shell_array(values: list[str]) -> str:
     return "(" + " ".join(shell_quote(value) for value in values) + ")"
 
 
+def parse_package_metadata(text: str) -> dict[str, str]:
+    if tomllib is not None:
+        return tomllib.loads(text)["package"]
+
+    package: dict[str, str] = {}
+    in_package = False
+    for line in text.splitlines():
+        stripped = line.strip()
+        if stripped == "[package]":
+            in_package = True
+            continue
+        if stripped.startswith("[") and stripped.endswith("]"):
+            in_package = False
+            continue
+        if not in_package or "=" not in stripped:
+            continue
+
+        key, value = stripped.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if value.startswith('"') and value.endswith('"'):
+            package[key] = value[1:-1]
+
+    return package
+
+
 def main() -> int:
     args = parse_args()
 
-    cargo = tomllib.loads(args.cargo_toml.read_text())
-    package = cargo["package"]
+    package = parse_package_metadata(args.cargo_toml.read_text())
 
     binary_name = package["name"]
     version = package["version"]

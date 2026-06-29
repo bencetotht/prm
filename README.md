@@ -28,6 +28,7 @@ prm
 - `git` (used for git status/history/release metadata)
 - Optional: `lazygit` (for the `g` shortcut)
 - Optional: `tmux` (for popup/window integrations)
+- Optional: `cmux` on macOS (for terminal tab integration when running inside cmux)
 - Optional: `nix` with flakes enabled
 
 Path behavior:
@@ -156,7 +157,7 @@ inputs.prm.packages.${pkgs.stdenv.hostPlatform.system}.default
   - Shows recent commits and release distance from nearest tag
 - External tool shortcuts:
   - `g` opens `lazygit` for selected project
-  - `t` opens a new terminal context for selected project via tmux window
+  - `t` opens a new terminal context for selected project via tmux window or cmux tab
 - Terminal-adaptive UI theming:
   - `prm` avoids hard-coded background colors and leans on your terminal's default foreground/background
   - Selection and focus are primarily expressed with `reverse`, `bold`, `dim`, and underline attributes
@@ -189,7 +190,7 @@ Global:
 | `/` | Open project filter input |
 | `f` | Fetch now (refresh DB + git + pane caches) |
 | `g` | Open `lazygit` for selected project |
-| `t` | Open tmux terminal window for selected project |
+| `t` | Open terminal tab/window for selected project via tmux or cmux |
 | `Tab` / `Shift+Tab` | Cycle pane focus forward/backward |
 | `h` / `l` | Cycle pane focus left/right |
 | `Left` / `Right` | Cycle pane focus |
@@ -225,6 +226,9 @@ Filter mode:
 | --- | --- |
 | Type text | Live filter projects by name/path |
 | `Backspace` | Remove filter characters |
+| `Delete` | Remove character under the cursor |
+| `Left` / `Right` | Move the filter cursor |
+| `Home` / `End` | Jump to start/end of filter text |
 | `Enter` | Apply and close filter mode |
 | `Esc` or `q` | Close filter mode |
 
@@ -240,6 +244,9 @@ Modal dialogs:
 | --- | --- |
 | `Enter` | Submit current modal |
 | `Esc` | Cancel modal |
+| `Left` / `Right` | Move cursor in editable fields |
+| `Home` / `End` | Jump to start/end in editable fields |
+| `Backspace` / `Delete` | Remove text around the cursor |
 | In confirm modal: `y` / `n` | Confirm / cancel |
 | In add-project modal: `Tab` | Switch active field |
 
