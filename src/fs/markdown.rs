@@ -52,7 +52,7 @@ pub fn list_todos(project_path: &Path, project_id: i64) -> Result<Vec<Todo>> {
     let lines = read_lines(project_path)?;
     let now = Utc::now().to_rfc3339();
 
-    let todos = lines
+    let mut todos: Vec<Todo> = lines
         .iter()
         .enumerate()
         .filter_map(|(line_idx, line)| {
@@ -67,6 +67,8 @@ pub fn list_todos(project_path: &Path, project_id: i64) -> Result<Vec<Todo>> {
             })
         })
         .collect();
+
+    todos.sort_by_key(|todo| (todo.done, todo.sort_order, todo.id));
 
     Ok(todos)
 }
@@ -153,11 +155,19 @@ pub fn delete_todo(project_path: &Path, line_idx: usize) -> Result<()> {
 pub fn move_todo(project_path: &Path, line_idx: usize, direction: MoveDirection) -> Result<bool> {
     let mut lines = read_lines(project_path)?;
 
-    // Collect indices of all todo lines
+    let Some((done, _)) = lines.get(line_idx).and_then(|line| parse_todo_line(line)) else {
+        return Ok(false);
+    };
+
+    if done {
+        return Ok(false);
+    }
+
+    // Collect indices of all active todo lines.
     let todo_indices: Vec<usize> = lines
         .iter()
         .enumerate()
-        .filter(|(_, line)| parse_todo_line(line).is_some())
+        .filter(|(_, line)| matches!(parse_todo_line(line), Some((false, _))))
         .map(|(i, _)| i)
         .collect();
 
@@ -209,6 +219,16 @@ mod tests {
     }
 
     #[test]
+    fn list_todos_keeps_active_above_done() {
+        let dir = setup("- [x] Done\n- [ ] Active\n");
+        let todos = list_todos(dir.path(), 1).expect("list todos");
+        assert_eq!(todos[0].title, "Active");
+        assert!(!todos[0].done);
+        assert_eq!(todos[1].title, "Done");
+        assert!(todos[1].done);
+    }
+
+    #[test]
     fn active_todo_count_only_counts_unchecked_items() {
         let dir = setup("- [ ] Task A\n- [x] Task B\n- [X] Task C\n- [ ] Task D\n");
         let count = active_todo_count(dir.path()).expect("active count");
@@ -232,8 +252,13 @@ mod tests {
         toggle_todo(dir.path(), 0).expect("toggle A");
         toggle_todo(dir.path(), 1).expect("toggle B");
         let todos = list_todos(dir.path(), 1).expect("list todos");
-        assert!(todos[0].done);
-        assert!(!todos[1].done);
+        assert_eq!(
+            todos
+                .iter()
+                .map(|todo| (todo.title.as_str(), todo.done))
+                .collect::<Vec<_>>(),
+            vec![("Task B", false), ("Task A", true)]
+        );
     }
 
     #[test]
@@ -295,5 +320,24 @@ mod tests {
         assert_eq!(lines[0], "- [ ] B");
         assert_eq!(lines[1], "some note"); // non-todo line preserved
         assert_eq!(lines[2], "- [ ] A");
+    }
+
+    #[test]
+    fn move_todo_only_reorders_active_items() {
+        let dir = setup("- [ ] A\n- [x] Done\n- [ ] B\n");
+
+        let moved = move_todo(dir.path(), 2, MoveDirection::Up).expect("move active up");
+        assert!(moved);
+        let todos = list_todos(dir.path(), 1).expect("list todos");
+        assert_eq!(
+            todos
+                .iter()
+                .map(|todo| (todo.title.as_str(), todo.done))
+                .collect::<Vec<_>>(),
+            vec![("B", false), ("A", false), ("Done", true)]
+        );
+
+        let moved = move_todo(dir.path(), 1, MoveDirection::Up).expect("move done up");
+        assert!(!moved);
     }
 }

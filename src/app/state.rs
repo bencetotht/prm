@@ -365,6 +365,26 @@ impl AppState {
             KeyCode::Char('q') => {
                 self.status = "Press Q to quit".to_string();
             }
+            KeyCode::PageDown => {
+                if self.focus == FocusPane::Todos {
+                    self.move_selected_todo(MoveDirection::Down);
+                }
+            }
+            KeyCode::PageUp => {
+                if self.focus == FocusPane::Todos {
+                    self.move_selected_todo(MoveDirection::Up);
+                }
+            }
+            KeyCode::Down if key.modifiers == KeyModifiers::SHIFT => {
+                if self.focus == FocusPane::Todos {
+                    self.move_selected_todo(MoveDirection::Down);
+                }
+            }
+            KeyCode::Up if key.modifiers == KeyModifiers::SHIFT => {
+                if self.focus == FocusPane::Todos {
+                    self.move_selected_todo(MoveDirection::Up);
+                }
+            }
             KeyCode::Char('j') | KeyCode::Down => self.move_down(),
             KeyCode::Char('k') | KeyCode::Up => self.move_up(),
             KeyCode::Char('J') => {
@@ -1071,6 +1091,11 @@ impl AppState {
             return;
         };
 
+        if todo.done {
+            self.status = "Only active todos can be moved".to_string();
+            return;
+        }
+
         let is_markdown = self
             .selected_project()
             .map(|p| p.todo_source == "markdown")
@@ -1730,6 +1755,61 @@ mod tests {
 
         assert_eq!(state.todos[1].title, "three");
         assert_eq!(state.todos[2].title, "two");
+    }
+
+    #[test]
+    fn todo_reorder_via_page_and_shift_arrow_keys() {
+        let mut state = test_state();
+        let project_id = state.selected_project().expect("project").id;
+
+        state
+            .repo
+            .create_todo(project_id, "one")
+            .expect("create first todo");
+        state
+            .repo
+            .create_todo(project_id, "two")
+            .expect("create second todo");
+        state
+            .repo
+            .create_todo(project_id, "three")
+            .expect("create third todo");
+        state
+            .load_todos_for_selected_project()
+            .expect("load todos for state");
+
+        state.focus = FocusPane::Todos;
+        state.selected_todo = 0;
+        state.handle_key_event(KeyEvent::from(KeyCode::PageDown));
+
+        assert_eq!(state.todos[0].title, "two");
+        assert_eq!(state.todos[1].title, "one");
+
+        state.handle_key_event(KeyEvent::new(KeyCode::Up, KeyModifiers::SHIFT));
+
+        assert_eq!(state.todos[0].title, "one");
+        assert_eq!(state.todos[1].title, "two");
+    }
+
+    #[test]
+    fn completed_todo_cannot_be_reordered_from_ui() {
+        let mut state = test_state();
+        let project_id = state.selected_project().expect("project").id;
+
+        let todo = state
+            .repo
+            .create_todo(project_id, "done")
+            .expect("create todo");
+        state.repo.toggle_todo(todo.id).expect("complete todo");
+        state
+            .load_todos_for_selected_project()
+            .expect("load todos for state");
+
+        state.focus = FocusPane::Todos;
+        state.selected_todo = 0;
+        state.handle_key_event(KeyEvent::from(KeyCode::PageDown));
+
+        assert_eq!(state.status, "Only active todos can be moved");
     }
 
     #[test]

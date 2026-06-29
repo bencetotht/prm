@@ -142,7 +142,7 @@ inputs.prm.packages.${pkgs.stdenv.hostPlatform.system}.default
   - Per-project git badges (`CHG`, `PUSH`, `COMMIT`, `OK`, `BEHIND`, `DIVERGED`, etc.)
   - Latest reachable tag shown in the project row
 - Todo management:
-  - Per-project TODO list with add/edit/toggle/reorder/delete
+  - Per-project TODO list with add/edit/toggle/move active/delete
   - Supports two storage modes per project:
     - `db` mode (default): todos in `prm` SQLite DB
     - `markdown` mode: todos in `<project>/TODO.md` using markdown checkbox lines
@@ -218,7 +218,7 @@ Todos pane:
 | `e` or `Enter` | Edit selected todo |
 | `Space` | Toggle done state |
 | `d` then `d` | Delete selected todo (double press safety) |
-| `J` / `K` | Reorder selected todo down/up |
+| `J` / `K`, `PgDn` / `PgUp`, `Shift+Down` / `Shift+Up` | Move selected active todo down/up |
 
 Filter mode:
 

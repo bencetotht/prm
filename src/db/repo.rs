@@ -332,23 +332,39 @@ impl Repository {
             return Ok(false);
         };
 
-        let mut ids: Vec<i64> = self
-            .list_todos(project_id)?
-            .into_iter()
-            .map(|todo| todo.id)
-            .collect();
-
-        let Some(index) = ids.iter().position(|id| *id == todo_id) else {
+        let mut todos = self.list_todos(project_id)?;
+        let Some(todo) = todos.iter().find(|todo| todo.id == todo_id) else {
             return Ok(false);
         };
 
-        let target = match direction {
-            MoveDirection::Up if index > 0 => index - 1,
-            MoveDirection::Down if index + 1 < ids.len() => index + 1,
+        if todo.done {
+            return Ok(false);
+        }
+
+        let active_indices: Vec<usize> = todos
+            .iter()
+            .enumerate()
+            .filter(|(_, todo)| !todo.done)
+            .map(|(index, _)| index)
+            .collect();
+
+        let Some(active_index) = active_indices
+            .iter()
+            .position(|&index| todos[index].id == todo_id)
+        else {
+            return Ok(false);
+        };
+
+        let target_active_index = match direction {
+            MoveDirection::Up if active_index > 0 => active_index - 1,
+            MoveDirection::Down if active_index + 1 < active_indices.len() => active_index + 1,
             _ => return Ok(false),
         };
 
-        ids.swap(index, target);
+        let index = active_indices[active_index];
+        let target = active_indices[target_active_index];
+        todos.swap(index, target);
+        let ids: Vec<i64> = todos.into_iter().map(|todo| todo.id).collect();
         self.rewrite_todo_order(project_id, &ids)?;
         Ok(true)
     }
@@ -511,6 +527,41 @@ mod tests {
         let moved = repo
             .move_todo(one.id, MoveDirection::Up)
             .expect("move todo up at boundary");
+        assert!(!moved);
+    }
+
+    #[test]
+    fn move_todo_only_reorders_active_todos() {
+        let repo = Repository::open_in_memory().expect("in-memory repo");
+        let temp = tempfile::tempdir().expect("tempdir");
+        let project = repo
+            .upsert_project(temp.path(), None)
+            .expect("insert project")
+            .project;
+
+        let _one = repo.create_todo(project.id, "one").expect("todo one");
+        let two = repo.create_todo(project.id, "two").expect("todo two");
+        let three = repo.create_todo(project.id, "three").expect("todo three");
+
+        repo.toggle_todo(two.id).expect("complete second todo");
+
+        let moved = repo
+            .move_todo(three.id, MoveDirection::Up)
+            .expect("move active todo");
+        assert!(moved);
+
+        let todos = repo.list_todos(project.id).expect("todos after move");
+        assert_eq!(
+            todos
+                .iter()
+                .map(|todo| (todo.title.as_str(), todo.done))
+                .collect::<Vec<_>>(),
+            vec![("three", false), ("one", false), ("two", true)]
+        );
+
+        let moved = repo
+            .move_todo(two.id, MoveDirection::Up)
+            .expect("move completed todo");
         assert!(!moved);
     }
 
