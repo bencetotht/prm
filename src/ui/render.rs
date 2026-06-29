@@ -270,13 +270,12 @@ fn todo_keyword_match(
 }
 
 fn has_semantic_keyword_boundary(title: &str, keyword_end: usize) -> bool {
-    match title
-        .get(keyword_end..)
-        .and_then(|suffix| suffix.chars().next())
-    {
-        Some(':') | Some('(') => true,
-        _ => false,
-    }
+    matches!(
+        title
+            .get(keyword_end..)
+            .and_then(|suffix| suffix.chars().next()),
+        Some(':') | Some('(')
+    )
 }
 
 fn truncate_with_ellipsis(text: &str, max_width: usize) -> String {

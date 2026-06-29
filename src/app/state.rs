@@ -365,48 +365,39 @@ impl AppState {
             KeyCode::Char('q') => {
                 self.status = "Press Q to quit".to_string();
             }
-            KeyCode::PageDown => {
-                if self.focus == FocusPane::Todos {
-                    self.move_selected_todo(MoveDirection::Down);
-                }
+            KeyCode::PageDown if self.focus == FocusPane::Todos => {
+                self.move_selected_todo(MoveDirection::Down);
             }
-            KeyCode::PageUp => {
-                if self.focus == FocusPane::Todos {
-                    self.move_selected_todo(MoveDirection::Up);
-                }
+            KeyCode::PageUp if self.focus == FocusPane::Todos => {
+                self.move_selected_todo(MoveDirection::Up);
             }
-            KeyCode::Down if key.modifiers == KeyModifiers::SHIFT => {
-                if self.focus == FocusPane::Todos {
-                    self.move_selected_todo(MoveDirection::Down);
-                }
+            KeyCode::Down
+                if key.modifiers == KeyModifiers::SHIFT && self.focus == FocusPane::Todos =>
+            {
+                self.move_selected_todo(MoveDirection::Down);
             }
-            KeyCode::Up if key.modifiers == KeyModifiers::SHIFT => {
-                if self.focus == FocusPane::Todos {
-                    self.move_selected_todo(MoveDirection::Up);
-                }
+            KeyCode::Up
+                if key.modifiers == KeyModifiers::SHIFT && self.focus == FocusPane::Todos =>
+            {
+                self.move_selected_todo(MoveDirection::Up);
             }
+            KeyCode::Down | KeyCode::Up if key.modifiers == KeyModifiers::SHIFT => {}
             KeyCode::Char('j') | KeyCode::Down => self.move_down(),
             KeyCode::Char('k') | KeyCode::Up => self.move_up(),
-            KeyCode::Char('J') => {
-                if self.focus == FocusPane::Todos {
-                    self.move_selected_todo(MoveDirection::Down);
-                }
+            KeyCode::Char('J') if self.focus == FocusPane::Todos => {
+                self.move_selected_todo(MoveDirection::Down);
             }
-            KeyCode::Char('K') => {
-                if self.focus == FocusPane::Todos {
-                    self.move_selected_todo(MoveDirection::Up);
-                }
+            KeyCode::Char('K') if self.focus == FocusPane::Todos => {
+                self.move_selected_todo(MoveDirection::Up);
             }
-            KeyCode::Char('a') => {
-                if self.focus == FocusPane::Projects {
-                    self.modal = Some(Modal::AddProject(AddProjectModal {
-                        path: String::new(),
-                        name: String::new(),
-                        path_cursor: 0,
-                        name_cursor: 0,
-                        active_field: AddProjectField::Path,
-                    }));
-                }
+            KeyCode::Char('a') if self.focus == FocusPane::Projects => {
+                self.modal = Some(Modal::AddProject(AddProjectModal {
+                    path: String::new(),
+                    name: String::new(),
+                    path_cursor: 0,
+                    name_cursor: 0,
+                    active_field: AddProjectField::Path,
+                }));
             }
             KeyCode::Char('r') => {
                 if self.focus == FocusPane::Projects
@@ -580,10 +571,10 @@ impl AppState {
                 KeyCode::Right => move_cursor_right(&input.value, &mut input.cursor),
                 KeyCode::Home => input.cursor = 0,
                 KeyCode::End => input.cursor = input.value.len(),
-                KeyCode::Char(ch) => {
-                    if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT {
-                        insert_at_cursor(&mut input.value, &mut input.cursor, ch);
-                    }
+                KeyCode::Char(ch)
+                    if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT =>
+                {
+                    insert_at_cursor(&mut input.value, &mut input.cursor, ch);
                 }
                 _ => {}
             },
@@ -630,15 +621,15 @@ impl AppState {
                     }
                     return;
                 }
-                KeyCode::Char(ch) => {
-                    if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT {
-                        match add.active_field {
-                            AddProjectField::Path => {
-                                insert_at_cursor(&mut add.path, &mut add.path_cursor, ch);
-                            }
-                            AddProjectField::Name => {
-                                insert_at_cursor(&mut add.name, &mut add.name_cursor, ch);
-                            }
+                KeyCode::Char(ch)
+                    if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT =>
+                {
+                    match add.active_field {
+                        AddProjectField::Path => {
+                            insert_at_cursor(&mut add.path, &mut add.path_cursor, ch);
+                        }
+                        AddProjectField::Name => {
+                            insert_at_cursor(&mut add.name, &mut add.name_cursor, ch);
                         }
                     }
                 }
@@ -726,14 +717,14 @@ impl AppState {
             }
             KeyCode::Home => self.filter_cursor = 0,
             KeyCode::End => self.filter_cursor = self.filter_input.len(),
-            KeyCode::Char(ch) => {
-                if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT {
-                    let mut cursor = self.filter_cursor;
-                    insert_at_cursor(&mut self.filter_input, &mut cursor, ch);
-                    self.filter_cursor = cursor;
-                    if let Err(err) = self.reload_projects() {
-                        self.status = format!("Failed to apply filter: {err}");
-                    }
+            KeyCode::Char(ch)
+                if key.modifiers.is_empty() || key.modifiers == KeyModifiers::SHIFT =>
+            {
+                let mut cursor = self.filter_cursor;
+                insert_at_cursor(&mut self.filter_input, &mut cursor, ch);
+                self.filter_cursor = cursor;
+                if let Err(err) = self.reload_projects() {
+                    self.status = format!("Failed to apply filter: {err}");
                 }
             }
             _ => {}
