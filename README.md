@@ -18,6 +18,18 @@ It helps you keep a local index of repositories, manage project TODOs, inspect r
 # Add the current directory (or pass any path)
 prm add .
 
+# List, inspect, rename, archive, or remove projects
+prm list
+prm show my-project
+prm rename my-project "New name"
+prm archive my-project
+prm remove my-project --yes
+
+# Manage todos from the shell
+prm todo list --project my-project
+prm todo add --project my-project "Ship the CLI"
+prm todo toggle --project my-project 1
+
 # Open the TUI
 prm
 ```
@@ -35,6 +47,22 @@ Path behavior:
 - `prm add` accepts multiple paths, so `prm add *` processes each matched path as a separate project add.
 - Added paths are canonicalized.
 - If you add a subdirectory inside a git repo, `prm` stores the git repo root.
+- Project references in CLI commands can be a project id, exact project name, registered path, or a unique name/path fragment.
+
+Useful CLI commands:
+- `prm list` (`ls`): list active projects; use `--all` to include archived projects, `--filter <text>` to search, or `--paths` for script-friendly path output.
+- `prm show <project>`: print project details, todo counts, and todo storage mode.
+- `prm path <project>`: print the registered path for shell integration.
+- `prm rename <project> <name>`: rename a project.
+- `prm archive <project>` / `prm unarchive <project>`: hide or restore a project without deleting it.
+- `prm remove <project>` (`rm`, `delete`): remove a project from `prm`; pass `--yes` to skip the confirmation prompt.
+- `prm source <project> db|markdown`: switch todo storage between the `prm` database and `<project>/TODO.md`.
+- `prm todo list --project <project>`: list todos for a project.
+- `prm todo add --project <project> <title>`: add a todo.
+- `prm todo toggle --project <project> <todo-id>`: toggle done state.
+- `prm todo edit --project <project> <todo-id> <title>`: rename a todo.
+- `prm todo remove --project <project> <todo-id>` (`rm`, `delete`): remove a todo.
+- `prm todo move --project <project> <todo-id> up|down`: reorder an active todo.
 
 ## Installation
 
